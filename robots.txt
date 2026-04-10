@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://cruzlauroiii.github.io/rnapop.com/sitemap.xml

@@ -1,0 +1,121 @@
+@page "/protocol/ivt-steps"
+@page "/protocol/{TherapyId?}"
+
+<PageTitle>IVT Protocol - RNA Therapy Platform</PageTitle>
+
+<div class="protocol-page">
+    <h2>mRNA Synthesis Protocol</h2>
+
+    <div class="category-filter">
+        @foreach (var t in TherapyCatalog.All)
+        {
+            <button class="@(_selectedTherapyId == t.Id ? "active" : "")" @onclick="() => SelectTherapy(t.Id)">@t.Name</button>
+        }
+    </div>
+
+    <p>@_protocol.Name — @_protocol.Steps.Length steps</p>
+
+    <div class="protocol-progress">
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: @(CompletedPercent)%"></div>
+        </div>
+        <span>@CompletedCount / @_protocol.Steps.Length steps complete</span>
+    </div>
+
+    <div class="protocol-steps">
+        @foreach (var step in _protocol.Steps)
+        {
+            <div class="step @(step.Completed ? "completed" : _currentStep == step.Order ? "current" : "pending")">
+                <div class="step-header">
+                    <span class="step-num">@step.Order</span>
+                    <span class="step-name">@step.Name</span>
+                    <span class="step-equip">@step.Equipment</span>
+                    @if (step.Completed)
+                    {
+                        <span class="step-done">Done</span>
+                    }
+                </div>
+                <div class="step-body">
+                    <p>@step.Description</p>
+                    @if (step.Temperature > 0)
+                    {
+                        <div class="step-param">Temperature: @step.Temperature °C</div>
+                    }
+                    @if (step.DurationMinutes > 0)
+                    {
+                        <div class="step-param">Duration: @step.DurationMinutes min</div>
+                    }
+                    @if (step.TargetRpm > 0)
+                    {
+                        <div class="step-param">Centrifuge: @step.TargetRpm RPM</div>
+                    }
+                    @if (step.Voltage > 0)
+                    {
+                        <div class="step-param">Voltage: @step.Voltage V</div>
+                    }
+                    <div class="step-notes">@step.Notes</div>
+
+                    @if (!step.Completed && _currentStep == step.Order)
+                    {
+                        <div class="step-actions">
+                            @if (step.StartedAt is null)
+                            {
+                                <button class="btn-primary" @onclick="() => StartStep(step)">Start Step</button>
+                            }
+                            else
+                            {
+                                <div class="step-timer">Started: @step.StartedAt?.ToString("HH:mm:ss")</div>
+                                <button class="btn-primary" @onclick="() => CompleteStep(step)">Mark Complete</button>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (AllComplete)
+    {
+        <div class="protocol-complete">
+            Protocol complete. mRNA-LNP product ready.
+        </div>
+    }
+
+    <button class="btn-secondary" @onclick="ResetProtocol">Reset Protocol</button>
+</div>
+
+@code {
+    [Parameter] public string? TherapyId { get; set; }
+
+    private string _selectedTherapyId = "rejuvenation";
+    private IvtProtocol _protocol = new();
+    private int _currentStep = 1;
+
+    private int CompletedCount => _protocol.Steps.Count(s => s.Completed);
+    private double CompletedPercent => _protocol.Steps.Length > 0 ? 100.0 * CompletedCount / _protocol.Steps.Length : 0;
+    private bool AllComplete => _protocol.Steps.All(s => s.Completed);
+
+    protected override void OnParametersSet()
+    {
+        if (TherapyId is not null) SelectTherapy(TherapyId);
+        else SelectTherapy(_selectedTherapyId);
+    }
+
+    private void SelectTherapy(string id)
+    {
+        _selectedTherapyId = id;
+        _protocol = TherapyProtocols.GetProtocol(id);
+        _currentStep = 1;
+    }
+
+    private void StartStep(IvtStep step) => step.StartedAt = DateTime.Now;
+
+    private void CompleteStep(IvtStep step)
+    {
+        step.Completed = true;
+        step.CompletedAt = DateTime.Now;
+        if (_currentStep < _protocol.Steps.Length) _currentStep++;
+    }
+
+    private void ResetProtocol() => SelectTherapy(_selectedTherapyId);
+}

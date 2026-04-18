@@ -1,0 +1,375 @@
+@page "/therapy/{TherapyId}/assess"
+
+<PageTitle>Therapy Assessment - RNA Therapy Platform</PageTitle>
+
+<div class="assess">
+    <h2>@_therapy.Name — Assessment</h2>
+    <p class="panel-note">@_therapy.Description</p>
+    <p class="help-block">Enter patient data below to compute therapy eligibility. The scoring engine evaluates your inputs against clinical criteria and outputs: RECOMMENDED (strong candidate), CONDITIONAL (may benefit with caveats), or NOT RECOMMENDED (contraindicated or insufficient data). All computation runs in your browser — no data is sent anywhere.</p>
+
+    @if (_result is not null)
+    {
+        <TherapyResultCard Result="_result" OnReset="Reset" />
+    }
+    else
+    {
+        <!-- Shared: Age, Sex, Weight -->
+        <fieldset>
+            <legend>Patient</legend>
+            <p class="section-help">Basic demographics used for age-stratified reference ranges, sex-specific thresholds (e.g., grip strength, telomere length), and weight-based dosing calculations.</p>
+            <div class="form-grid">
+                <label>
+                    Age
+                    <input type="number" @bind="_input.Age" />
+                    <span class="help">Chronological age in years. Used for age-adjusted scoring thresholds and dose calculations. Elderly (&gt;65) and pediatric (&lt;18) may have different eligibility criteria.</span>
+                </label>
+                <label>
+                    Sex
+                    <select @bind="_input.Sex"><option value="@Sex.Male">Male</option><option value="@Sex.Female">Female</option></select>
+                    <span class="help">Biological sex. Determines reference ranges (e.g., grip strength: male &lt;27kg vs female &lt;16kg), telomere length expectations, and hair loss scale type (Norwood for male, Ludwig for female).</span>
+                </label>
+                <label>
+                    Weight (kg)
+                    <input type="number" step="0.5" @bind="_input.WeightKg" />
+                    <span class="help">Body weight in kilograms. May influence dose calculations for some therapies. Standard adult range: 50-100kg.</span>
+                </label>
+                @if (_therapy.Id is "covid19" or "universal-flu")
+                {
+                    <label>
+                        Immunocompromised
+                        <select @bind="_input.Immunocompromised"><option value="false">No</option><option value="true">Yes</option></select>
+                        <span class="help">Includes: organ transplant recipients, HIV/AIDS, active chemotherapy, chronic corticosteroid use, primary immunodeficiency. Immunocompromised patients may need higher doses and are prioritized for passive immunization (mRNA-encoded antibodies).</span>
+                    </label>
+                }
+            </div>
+        </fieldset>
+
+        @switch (_therapy.Id)
+        {
+            case "common-cold":
+            case "influenza":
+            case "covid19":
+                <fieldset>
+                    <legend>Symptoms</legend>
+                    <p class="section-help">Symptom data determines treatment window eligibility and helps differentiate between cold, flu, and COVID. Timing since onset is the most critical factor — mRNA therapeutics work best when administered early before peak viral load.</p>
+                    <div class="form-grid">
+                        <label>
+                            Hours since symptom onset
+                            <input type="number" @bind="_input.SymptomOnsetHours" />
+                            <span class="help">Hours since first symptom appeared. CRITICAL: Cold treatment window is 24h, flu is 48h, COVID is 120h (5 days). Past this window, therapeutic mRNA antibodies are less effective because viral load has peaked. Earlier = better outcome.</span>
+                        </label>
+                        <label>
+                            Temperature (°C)
+                            <input type="number" step="0.1" @bind="_input.TemperatureCelsius" />
+                            <span class="help">Current body temperature. Normal: 36.5-37.5°C. Fever (&gt;38.0°C) is UNCOMMON in rhinovirus cold — if present, the scoring engine flags it as possible flu or COVID and downgrades cold confidence. Fever &gt;39.5°C with flu triggers "severe" classification requiring co-treatment with oseltamivir.</span>
+                        </label>
+                        <label>
+                            Severity (1-10)
+                            <input type="number" min="1" max="10" @bind="_input.SeverityScore" />
+                            <span class="help">Self-assessed overall symptom severity. 1-3: mild (runny nose only). 4-6: moderate (multiple symptoms, functional). 7-10: severe (bedridden, difficulty breathing). Severity &gt;7 with flu triggers "severe" classification. With cold, high severity suggests misdiagnosis (may be flu).</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.HasCough" /> Cough
+                            <span class="help">Dry or productive cough. Present in ~30% of colds, ~80% of flu, ~60% of COVID. Each checked symptom adds +3 to confidence score (more symptoms = more certain diagnosis).</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.HasSoreThroat" /> Sore Throat
+                            <span class="help">Pain or scratchiness in throat. Common early symptom of rhinovirus cold. Less common as primary symptom in flu.</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.HasCongestion" /> Congestion
+                            <span class="help">Nasal congestion or stuffy nose. Very common in cold (&gt;80%), less prominent in flu. Relevant for intranasal delivery — severe congestion may reduce nebulizer effectiveness.</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.HasBodyAches" /> Body Aches
+                            <span class="help">Myalgia (muscle pain). Mild in cold, prominent in flu. Strong body aches with cold symptoms suggest flu misdiagnosis.</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.HasFatigue" /> Fatigue
+                            <span class="help">Unusual tiredness or exhaustion. Moderate in cold, severe in flu (can last 2-3 weeks). COVID fatigue may persist months (long COVID).</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.HasHeadache" /> Headache
+                            <span class="help">Head pain. Common in both cold and flu. Severe headache with stiff neck = seek emergency care (possible meningitis, not viral).</span>
+                        </label>
+                    </div>
+                </fieldset>
+                @if (_therapy.Id == "influenza")
+                {
+                    <fieldset>
+                        <legend>Influenza Details</legend>
+                        <p class="section-help">If rapid flu test was performed, select the identified subtype. This helps select the most targeted mRNA construct.</p>
+                        <div class="form-grid">
+                            <label>
+                                Subtype
+                                <select @bind="_input.VirusSubtype"><option value="">Unknown</option><option>H1N1</option><option>H3N2</option><option>Influenza B</option></select>
+                                <span class="help">Influenza subtype from rapid antigen test or PCR. H1N1 and H3N2 are influenza A subtypes. The broadly neutralizing antibody CR9114 targets all subtypes, so treatment is effective even if subtype is unknown. Subtype info helps predict severity (H3N2 tends to be more severe in elderly).</span>
+                            </label>
+                        </div>
+                    </fieldset>
+                }
+                @if (_therapy.Id == "covid19")
+                {
+                    <fieldset>
+                        <legend>COVID-19 Details</legend>
+                        <p class="section-help">Vaccination history determines baseline immunity. The scoring engine uses this to assess whether passive immunization (mRNA-encoded nanobody) adds benefit beyond existing immunity.</p>
+                        <div class="form-grid">
+                            <label>
+                                Vaccination doses
+                                <input type="number" min="0" max="10" @bind="_input.VaccinationDoses" />
+                                <span class="help">Total COVID vaccine doses received (any manufacturer). 0 = unvaccinated (high priority for treatment). 2+ = primary series complete. 3+ = boosted. Unvaccinated patients are always classified as RECOMMENDED regardless of other factors.</span>
+                            </label>
+                            <label>
+                                Days since last vaccine
+                                <input type="number" @bind="_input.DaysSinceLastVaccine" />
+                                <span class="help">Days since most recent vaccination or booster. Antibody levels wane after ~180 days. &gt;180 days since last dose = reduced protection, stronger case for mRNA therapeutic.</span>
+                            </label>
+                            <label>
+                                Variant
+                                <input type="text" @bind="_input.VirusSubtype" placeholder="e.g. XBB.1.5" />
+                                <span class="help">SARS-CoV-2 variant if known from PCR sequencing. The pan-sarbecovirus nanobody VHH-72 targets a conserved epitope across all variants, so treatment is effective regardless. Variant info is logged for epidemiological tracking.</span>
+                            </label>
+                        </div>
+                    </fieldset>
+                }
+                break;
+
+            case "universal-flu":
+                <fieldset>
+                    <legend>Vaccination History</legend>
+                    <p class="section-help">This is a PREVENTIVE vaccine (not treatment). It encodes all 20 influenza subtypes in a single mRNA formulation for lifelong pan-influenza protection. Currently preclinical — proven in mice (Science 2022) but no human data.</p>
+                    <div class="form-grid">
+                        <label>
+                            Prior flu vaccinations (lifetime)
+                            <input type="number" @bind="_input.PriorFluVaccinations" />
+                            <span class="help">Total seasonal flu shots received over lifetime. Prior vaccination history may affect immune response to the 20-valent mRNA — pre-existing immunity to some subtypes may boost or compete with new responses (original antigenic sin consideration).</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.HasAnaphylaxisHistory" /> History of anaphylaxis
+                            <span class="help">Any prior severe allergic reaction (to vaccines, foods, drugs, or other). If checked, the system requires first 3 doses to be administered under medical observation with epinephrine available. Does NOT disqualify — just adds safety requirements.</span>
+                        </label>
+                    </div>
+                </fieldset>
+                break;
+
+            case "cancer-neoantigen":
+                <fieldset>
+                    <legend>Tumor Details</legend>
+                    <p class="section-help">Personalized cancer vaccine requires: (1) tumor biopsy for whole-exome sequencing to identify somatic mutations, (2) HLA typing to predict which mutant peptides bind MHC-I for T-cell presentation. Without BOTH, the system cannot identify neoantigens and will return NOT RECOMMENDED. Manufacturing takes 4-6 weeks from biopsy to first dose.</p>
+                    <div class="form-grid">
+                        <label>
+                            Tumor type
+                            <select @bind="_input.TumorType"><option value="">Select...</option><option>Melanoma</option><option>Pancreatic</option><option>Colorectal</option><option>Lung (NSCLC)</option><option>Breast</option><option>Head & Neck</option><option>Other</option></select>
+                            <span class="help">Primary tumor type. Best studied: melanoma and pancreatic (BioNTech BNT122 Phase 2). Applicable to any solid tumor with sufficient mutational burden. Higher mutation rate = more neoantigen candidates = better vaccine.</span>
+                        </label>
+                        <label>
+                            Stage
+                            <select @bind="_input.CancerStage"><option value="">Select...</option><option>I</option><option>II</option><option>III</option><option>IV</option></select>
+                            <span class="help">TNM staging. Stage I-II: adjuvant (after surgery to prevent recurrence). Stage III-IV: therapeutic (with checkpoint inhibitor). Earlier stages have better outcomes but all stages may benefit.</span>
+                        </label>
+                        <label>
+                            Tumor size (cm)
+                            <input type="number" step="0.1" @bind="_input.TumorSizeCm" />
+                            <span class="help">Largest dimension of primary tumor in centimeters. Used for staging context. Larger tumors may have more heterogeneous mutations requiring more neoantigen targets.</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.TumorBiopsyAvailable" /> Tumor biopsy available
+                            <span class="help">REQUIRED. Fresh or FFPE (formalin-fixed paraffin-embedded) tumor tissue must be available for whole-exome sequencing (WES) + RNA-seq. Without biopsy, neoantigen identification is impossible. If no biopsy: schedule one before proceeding.</span>
+                        </label>
+                        <label>
+                            HLA type
+                            <input type="text" @bind="_input.HlaType" placeholder="e.g. HLA-A*02:01" />
+                            <span class="help">REQUIRED. Human Leukocyte Antigen type from blood test. Determines which mutant peptides will be presented on tumor cell surface for T-cell recognition. Common types: HLA-A*02:01 (most studied), HLA-A*01:01, HLA-B*07:02. If unknown: order HLA typing blood test (~$100-200).</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.Immunocompromised" /> Immunocompromised
+                            <span class="help">If immunocompromised: T-cell response to neoantigen vaccine may be blunted. Consider combining with IL-2 cytokine support or higher-dose anti-PD-1 checkpoint inhibitor. Does not disqualify but adds warnings.</span>
+                        </label>
+                    </div>
+                </fieldset>
+                break;
+
+            case "wound-healing":
+                <fieldset>
+                    <legend>Wound Details</legend>
+                    <p class="section-help">VEGF-A mRNA promotes blood vessel formation (angiogenesis) at the wound site. Most effective for chronic wounds (>30 days) and diabetic ulcers where natural VEGF production is impaired by hyperglycemia. mRNA's short half-life (24-48h) is ideal — sustained VEGF causes leaky vessels, but transient mRNA expression provides the perfect therapeutic window. AstraZeneca AZD8601 is in Phase 2 clinical trials.</p>
+                    <div class="form-grid">
+                        <label>
+                            Wound type
+                            <select @bind="_input.WoundType"><option value="">Select...</option><option>Surgical</option><option>Diabetic ulcer</option><option>Burns</option><option>Chronic/pressure</option><option>Traumatic</option></select>
+                            <span class="help">Type of wound. Diabetic ulcer and chronic/pressure wounds are the best candidates (impaired natural healing). Surgical wounds heal normally in most patients — mRNA only beneficial if healing is delayed (&gt;7 days). Burns: wait until granulation tissue is visible before applying mRNA hydrogel.</span>
+                        </label>
+                        <label>
+                            Wound area (cm²)
+                            <input type="number" step="0.5" @bind="_input.WoundAreaCm2" />
+                            <span class="help">Total wound surface area in square centimeters. Measure length × width. Dose is calculated at 10 µg mRNA per cm². Example: 15 cm² wound = 150 µg per application. Larger wounds need more product per application.</span>
+                        </label>
+                        <label>
+                            Wound age (days)
+                            <input type="number" @bind="_input.WoundAgeDays" />
+                            <span class="help">Days since wound occurred or was first documented. Chronic: &gt;30 days without significant healing progress. Acute (&lt;7 days): normal healing may suffice — mRNA recommended only if healing stalls. The scoring engine returns RECOMMENDED for chronic wounds, CONDITIONAL for acute.</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.IsDiabetic" /> Diabetic
+                            <span class="help">Patient has type 1 or type 2 diabetes. Diabetes impairs wound healing by: reducing VEGF production, impairing neutrophil function, causing peripheral neuropathy (wounds go unnoticed), and microvascular disease (poor blood supply). VEGF-A mRNA directly addresses the VEGF deficit. Diabetic + chronic = strongest indication (confidence score +15).</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.OnAnticoagulants" /> On anticoagulants
+                            <span class="help">Taking blood thinners (warfarin, heparin, DOACs like apixaban/rivarelbaan). Not a contraindication but adds a warning: monitor for bleeding at the hydrogel application site. The topical LNP-mRNA hydrogel is applied to the wound bed — anticoagulated patients may see more oozing.</span>
+                        </label>
+                    </div>
+                </fieldset>
+                break;
+
+            case "hair-regrowth":
+                <fieldset>
+                    <legend>Hair Loss Details</legend>
+                    <p class="section-help">WNT3A + SHH mRNA reactivates dormant hair follicle stem cells by re-engaging the Wnt/beta-catenin signaling pathway that is suppressed in androgenetic alopecia. Delivered via dissolving microneedle patches that penetrate the scalp dermis. Research stage — no clinical trials yet. Best results expected in early-stage loss where follicles are miniaturized but still present.</p>
+                    <div class="form-grid">
+                        <label>
+                            @((_input.Sex == Sex.Male) ? "Norwood scale (1-7)" : "Ludwig scale (1-3)")
+                            <input type="number" min="1" max="7" @bind="_input.HairLossScale" />
+                            <span class="help">Standardized hair loss classification. Male (Norwood): 1=no loss, 2=slight recession, 3=deeper recession, 4=significant vertex loss, 5=larger bare areas, 6-7=extensive loss. Female (Ludwig): I=thinning on crown, II=wider part, III=near-total crown loss. Lower scale = more salvageable follicles = higher confidence score. Scale &gt;5 (Norwood) loses 15 confidence points due to likely irreversible follicle death.</span>
+                        </label>
+                        <label>
+                            Years of hair loss
+                            <input type="number" @bind="_input.HairLossYears" />
+                            <span class="help">How many years hair loss has been progressing. &gt;10 years: many follicles may be permanently miniaturized or scarred — treatment can still help remaining vellus (fine) hairs but expect partial response. &lt;3 years: best prognosis, most follicles still responsive to Wnt reactivation.</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.FamilyHistoryBaldness" /> Family history of baldness
+                            <span class="help">First-degree relatives (parents, siblings) with similar pattern hair loss. Confirms androgenetic (genetic) alopecia — the type most likely to respond to Wnt/SHH mRNA (vs. alopecia areata which is autoimmune and needs different treatment). Family history is informational, does not affect scoring.</span>
+                        </label>
+                    </div>
+                </fieldset>
+                break;
+
+            case "muscle-loss":
+                <fieldset>
+                    <legend>Muscle Assessment</legend>
+                    <p class="section-help">Follistatin mRNA blocks myostatin (the body's muscle growth brake). Uses EWGSOP2 (European Working Group on Sarcopenia) diagnostic criteria: sarcopenia requires BOTH low grip strength AND low muscle mass. Pre-sarcopenia = one of the two. MUST combine with resistance exercise — follistatin removes the brake but exercise provides the growth signal. AAV-follistatin gene therapy is in Phase 1; mRNA version not yet in trials.</p>
+                    <div class="form-grid">
+                        <label>
+                            Grip strength (kg)
+                            <input type="number" step="0.5" @bind="_input.GripStrengthKg" />
+                            <small>Low: &lt;27 M, &lt;16 F</small>
+                            <span class="help">Measured with handheld dynamometer (best of 3 attempts, dominant hand). EWGSOP2 cutoffs: Male &lt;27kg or Female &lt;16kg = low grip strength. This is a proxy for overall muscle function. Get tested at any physical therapy clinic or buy a dynamometer (~$25 on Amazon).</span>
+                        </label>
+                        <label>
+                            Muscle mass index (kg/m²)
+                            <input type="number" step="0.1" @bind="_input.MuscleMassIndex" />
+                            <small>Low: &lt;7.0 M, &lt;5.5 F</small>
+                            <span class="help">Appendicular skeletal muscle mass divided by height squared (ASM/height²). Measured by DXA scan or bioimpedance analysis (BIA). EWGSOP2 cutoffs: Male &lt;7.0 or Female &lt;5.5 kg/m² = low muscle mass. Both low grip AND low MMI = confirmed sarcopenia = RECOMMENDED verdict.</span>
+                        </label>
+                        <label>
+                            Physical activity (1-5)
+                            <input type="number" min="1" max="5" @bind="_input.PhysicalActivityLevel" />
+                            <span class="help">Self-reported activity level. 1=sedentary (no exercise), 2=light (walking), 3=moderate (30min 3x/week), 4=active (daily exercise), 5=very active (athlete). Treatment MUST include resistance training 3x/week — follistatin without exercise stimulus has limited benefit. Low activity patients need exercise program first.</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.HasFalls" /> History of falls
+                            <span class="help">One or more falls in the past 12 months. Falls in elderly with sarcopenia indicate high fracture risk — escalates urgency from SCHEDULED to WITHIN 48 HOURS. Falls + sarcopenia = strong indication for follistatin mRNA to rapidly increase muscle mass and reduce future fall/fracture risk.</span>
+                        </label>
+                    </div>
+                </fieldset>
+                break;
+
+            case "allergy":
+                <fieldset>
+                    <legend>Allergy Details</legend>
+                    <p class="section-help">mRNA-encoded hypoallergenic proteins retrain immune tolerance. Unlike traditional allergy shots (which use whole allergen extract and risk anaphylaxis), the mRNA approach encodes MODIFIED allergens with disrupted IgE-binding epitopes but intact T-cell epitopes. Your immune system learns tolerance via T-regulatory cells WITHOUT triggering mast cell degranulation. Escalating dose protocol over 6 months. Research stage — no clinical trials yet.</p>
+                    <div class="form-grid">
+                        <label>
+                            Total IgE (IU/mL)
+                            <input type="number" @bind="_input.TotalIgE" />
+                            <small>Normal: &lt;100, Elevated: &gt;200</small>
+                            <span class="help">Total serum IgE from blood test. Normal: &lt;100 IU/mL. Elevated (&gt;200 IU/mL) confirms allergic phenotype — adds +10 to confidence score. Very high (&gt;1000 IU/mL) may indicate allergic bronchopulmonary aspergillosis or parasitic infection rather than simple allergy — investigate further.</span>
+                        </label>
+                        <label>
+                            Severity (1-10)
+                            <input type="number" min="1" max="10" @bind="_input.AllergySeverity" />
+                            <span class="help">Overall allergy impact on daily life. 1-3: mild (occasional sneezing). 4-6: moderate (daily symptoms, antihistamines needed). 7-10: severe (significantly impairs quality of life, multiple medications, affects sleep/work). Higher severity = stronger case for mRNA desensitization vs. just continuing antihistamines.</span>
+                        </label>
+                        <label>
+                            <input type="checkbox" @bind="_input.HasAnaphylaxisHistory" /> History of anaphylaxis
+                            <span class="help">Prior anaphylactic reaction to ANY trigger. IMPORTANT: mRNA hypoallergenic approach is actually SAFER than traditional allergy shots for anaphylaxis-prone patients because the modified proteins cannot bind IgE. However, first 3 doses must be administered under medical supervision with epinephrine available as a precaution.</span>
+                        </label>
+                    </div>
+                    <p class="section-help" style="margin-top:0.75rem;">Select your allergens below. The system will choose the matching mRNA constructs: Bet v 1 (birch pollen), Der p 1 (dust mite), Fel d 1 (cat). Unselected allergens are excluded from the formulation.</p>
+                    <div class="form-grid">
+                        @foreach (var allergen in _allergenOptions)
+                        {
+                            var name = allergen;
+                            <label>
+                                <input type="checkbox"
+                                       checked="@HasAllergen(name)"
+                                       @onchange="e => ToggleAllergen(name, (bool)e.Value!)" />
+                                @name
+                            </label>
+                        }
+                    </div>
+                </fieldset>
+                break;
+
+            case "rejuvenation":
+                <fieldset>
+                    <legend>Quick Blood Panel (PhenoAge)</legend>
+                    <p class="section-help">Enter 9 standard blood biomarkers from a comprehensive metabolic panel (CMP) + complete blood count (CBC). These are routine lab tests available at any clinic for ~$30-50. The Levine PhenoAge algorithm (2018) uses exact coefficients from Table S6 of the original paper to compute your biological age via Gompertz mortality modeling calibrated on NHANES III data (23 years of follow-up). For full 6-pillar assessment including piRNA/miRNA/SASP/pathways/telomere, use <a href="assess">Full Assessment</a>.</p>
+                    <div class="form-grid">
+                        <label>Albumin (g/dL) <input type="number" step="0.1" @bind="_biomarkers.Blood.Albumin" /> <small>Normal: 3.5-5.5. Coefficient: -0.0336 (higher = younger)</small></label>
+                        <label>Alkaline Phosphatase (U/L) <input type="number" step="1" @bind="_biomarkers.Blood.AlkalinePhosphatase" /> <small>Normal: 44-147. Coefficient: +0.00188 (higher = older)</small></label>
+                        <label>Creatinine (mg/dL) <input type="number" step="0.1" @bind="_biomarkers.Blood.Creatinine" /> <small>Normal: 0.7-1.3. Coefficient: +0.0095 (higher = older)</small></label>
+                        <label>CRP (mg/dL) <input type="number" step="0.1" @bind="_biomarkers.Blood.CReactiveProtein" /> <small>Normal: 0.0-1.0. Log-transformed. Coefficient: +0.0954 (inflammation = older)</small></label>
+                        <label>Fasting Glucose (mg/dL) <input type="number" step="1" @bind="_biomarkers.Blood.FastingGlucose" /> <small>Normal: 70-100. Coefficient: +0.1953 (highest weight — glucose dysregulation ages you fastest)</small></label>
+                        <label>WBC (10³/uL) <input type="number" step="0.1" @bind="_biomarkers.Blood.WhiteBloodCellCount" /> <small>Normal: 4.5-11.0. Coefficient: +0.0554 (elevated WBC = chronic inflammation)</small></label>
+                        <label>Lymphocyte % <input type="number" step="1" @bind="_biomarkers.Blood.LymphocytePercent" /> <small>Normal: 20-40. Coefficient: -0.0120 (higher lymphocytes = younger immune system)</small></label>
+                        <label>MCV (fL) <input type="number" step="1" @bind="_biomarkers.Blood.MeanCellVolume" /> <small>Normal: 80-100. Coefficient: +0.0268 (larger red blood cells = older)</small></label>
+                        <label>RDW (%) <input type="number" step="0.1" @bind="_biomarkers.Blood.RedCellDistWidth" /> <small>Normal: 11.5-14.5. Coefficient: +0.3306 (second highest weight — RDW variation strongly predicts mortality)</small></label>
+                    </div>
+                </fieldset>
+                break;
+        }
+
+        <div class="wizard-nav">
+            <button class="btn-primary calculate" @onclick="Calculate">Assess Therapy</button>
+            <span class="help">Runs the scoring engine on your inputs. Computes: verdict (RECOMMENDED/CONDITIONAL/NOT RECOMMENDED), confidence score (0-100), urgency level, dose recommendation, mRNA constructs to synthesize, delivery method with full instructions, LNP formulation, warnings, and contraindications. All computation happens in your browser.</span>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? TherapyId { get; set; }
+
+    private TherapyInput _input = new();
+    private BiomarkerInput _biomarkers = new();
+    private TherapyResult? _result;
+    private TherapyOption _therapy = TherapyCatalog.CommonCold;
+    private List<string> _allergens = [];
+    private readonly string[] _allergenOptions = ["Birch pollen", "Dust mite", "Cat", "Grass pollen", "Dog", "Mold"];
+
+    protected override void OnParametersSet()
+    {
+        _therapy = TherapyCatalog.All.FirstOrDefault(t => t.Id == (TherapyId ?? "common-cold")) ?? TherapyCatalog.CommonCold;
+        _input.TherapyId = _therapy.Id;
+    }
+
+    private void Calculate()
+    {
+        _input.Allergens = _allergens.ToArray();
+        if (_input.TherapyId == "rejuvenation")
+        {
+            _biomarkers.Demographics = new() { ChronologicalAge = _input.Age, Sex = _input.Sex };
+            _input.Biomarkers = _biomarkers;
+        }
+        _result = TherapyScorer.Score(_input);
+    }
+
+    private void Reset() => _result = null;
+
+    private bool HasAllergen(string name) => _allergens.Contains(name);
+    private void ToggleAllergen(string name, bool add)
+    {
+        if (add && !_allergens.Contains(name)) _allergens.Add(name);
+        else _allergens.Remove(name);
+    }
+}

@@ -1,0 +1,58 @@
+@code {
+    [Parameter] public Core.Models.PathwayPanel Pathway { get; set; } = new();
+    [Parameter] public TelomerePanel Telomere { get; set; } = new();
+}
+
+<fieldset>
+    <legend>Longevity Pathways &mdash; NAD+/SIRT/AMPK (Optional)</legend>
+    <p class="panel-note">Higher NAD+, sirtuins, and AMPK = healthier longevity pathway activation.</p>
+    <div class="form-grid">
+        <label>
+            NAD+ Level (uM)
+            <input type="number" step="1" @bind="Pathway.NadLevel" />
+            <small>Optimal: ~40 uM. Low: &lt;15</small>
+        </label>
+        <label>
+            NAD+/NADH Ratio
+            <input type="number" step="0.1" @bind="Pathway.NadNadhRatio" />
+            <small>Optimal: >= 3.0</small>
+        </label>
+        <label>
+            SIRT1 Expression (relative)
+            <input type="number" step="0.1" @bind="Pathway.Sirt1Expression" />
+            <small>1.0 = normal. Higher = better</small>
+        </label>
+        <label>
+            SIRT6 Expression (relative)
+            <input type="number" step="0.1" @bind="Pathway.Sirt6Expression" />
+            <small>1.0 = normal. Higher = better</small>
+        </label>
+        <label>
+            AMPK Activity (relative)
+            <input type="number" step="0.1" @bind="Pathway.AmpkActivity" />
+            <small>1.0 = normal. Higher = better</small>
+        </label>
+    </div>
+</fieldset>
+
+<fieldset>
+    <legend>Telomere Health (Optional)</legend>
+    <p class="panel-note">Longer telomeres for age = better replicative capacity.</p>
+    <div class="form-grid">
+        <label>
+            Leukocyte Telomere Length (kb)
+            <input type="number" step="0.1" @bind="Telomere.LeukocyteTelomereLength" />
+            <small>Declines ~0.04 kb/year from ~11 kb at birth</small>
+        </label>
+        <label>
+            TERT Expression (relative)
+            <input type="number" step="0.1" @bind="Telomere.TertExpression" />
+            <small>Telomerase reverse transcriptase. Higher = better</small>
+        </label>
+        <label>
+            TERC Level (relative)
+            <input type="number" step="0.1" @bind="Telomere.TercLevel" />
+            <small>Telomerase RNA component. Higher = better</small>
+        </label>
+    </div>
+</fieldset>

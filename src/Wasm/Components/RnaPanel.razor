@@ -1,0 +1,53 @@
+@code {
+    [Parameter] public PiRnaPanel PiRna { get; set; } = new();
+    [Parameter] public MiRnaPanel MiRna { get; set; } = new();
+}
+
+<fieldset>
+    <legend>piRNA Longevity Panel (Optional &mdash; Duke 2026)</legend>
+    <p class="panel-note">6 piRNAs from plasma. Lower levels = better longevity prognosis. Leave blank if not available.</p>
+    <div class="form-grid">
+        @for (int i = 0; i < 6; i++)
+        {
+            var idx = i;
+            <label>
+                piRNA-@(idx + 1) (RPM)
+                <input type="number" step="1" min="0"
+                       value="@PiRna.Values[idx]"
+                       @onchange="e => PiRna.Values[idx] = string.IsNullOrEmpty(e.Value?.ToString()) ? null : double.Parse(e.Value.ToString()!)" />
+            </label>
+        }
+    </div>
+</fieldset>
+
+<fieldset>
+    <legend>miRNA Aging Signature (Optional)</legend>
+    <p class="panel-note">Relative expression (1.0 = age-matched healthy reference). Leave blank if not tested.</p>
+    <div class="form-grid">
+        <label>
+            miR-34a (senescence/brain)
+            <input type="number" step="0.1" @bind="MiRna.MiR34a" />
+            <small>Higher = worse. >2x = elevated</small>
+        </label>
+        <label>
+            miR-21 (inflammaging)
+            <input type="number" step="0.1" @bind="MiRna.MiR21" />
+            <small>Higher = worse</small>
+        </label>
+        <label>
+            miR-155 (metabolic)
+            <input type="number" step="0.1" @bind="MiRna.MiR155" />
+            <small>Higher = worse</small>
+        </label>
+        <label>
+            miR-15b-5p (longevity)
+            <input type="number" step="0.1" @bind="MiRna.MiR15b5p" />
+            <small>Lower = worse (downregulated in short-lived)</small>
+        </label>
+        <label>
+            miR-373-5p (longevity)
+            <input type="number" step="0.1" @bind="MiRna.MiR3735p" />
+            <small>Higher = better (upregulated in long-lived)</small>
+        </label>
+    </div>
+</fieldset>

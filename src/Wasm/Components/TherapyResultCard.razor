@@ -1,0 +1,142 @@
+@code {
+    [Parameter] public TherapyResult Result { get; set; } = null!;
+    [Parameter] public EventCallback OnReset { get; set; }
+
+    private string VerdictClass => Result.Verdict switch
+    {
+        TherapyVerdict.Recommended => "pass",
+        TherapyVerdict.Conditional => "conditional",
+        _ => "fail",
+    };
+
+    private string VerdictText => Result.Verdict switch
+    {
+        TherapyVerdict.Recommended => "RECOMMENDED",
+        TherapyVerdict.Conditional => "CONDITIONAL",
+        _ => "NOT RECOMMENDED",
+    };
+}
+
+<div class="verdict-card @VerdictClass">
+    <div class="verdict-header">
+        <div class="verdict-icon">@VerdictText</div>
+        <div class="verdict-score">
+            <span class="big-score">@Result.ConfidenceScore.ToString("F0")</span>
+            <span class="score-label">/100</span>
+        </div>
+    </div>
+
+    <div class="therapy-result-meta">
+        <span class="therapy-urgency urgency-@Result.Urgency.ToString().ToLower()">@Result.Urgency</span>
+        <span>@Result.TherapyName</span>
+    </div>
+
+    <div class="verdict-reason">@Result.Summary</div>
+
+    <h3>Rationale</h3>
+    <ul class="recommendations">
+        @foreach (var r in Result.Rationale)
+        {
+            <li>@r</li>
+        }
+    </ul>
+
+    <h3>Dose Recommendation</h3>
+    <div class="dose-card">
+        <div class="dose-row"><strong>Amount:</strong> @Result.Dose.AmountUg ug</div>
+        <div class="dose-row"><strong>Route:</strong> @Result.Dose.Route</div>
+        <div class="dose-row"><strong>Doses:</strong> @Result.Dose.Doses</div>
+        <div class="dose-row"><strong>Schedule:</strong> @Result.Dose.Schedule</div>
+        <div class="dose-row dose-notes">@Result.Dose.Notes</div>
+    </div>
+
+    <h3>mRNA Constructs to Synthesize</h3>
+    <table class="construct-table">
+        <thead>
+            <tr><th>Name</th><th>Gene</th><th>Length</th><th>Function</th><th>Source</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var c in Result.Constructs)
+            {
+                <tr>
+                    <td>@c.Name</td>
+                    <td><code>@c.Gene</code></td>
+                    <td>@c.LengthNt nt</td>
+                    <td>@c.Function</td>
+                    <td>@c.Source</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <h3>Delivery Method</h3>
+    <div class="delivery-card">
+        <div class="delivery-header">
+            <span class="delivery-icon">@Result.DeliveryInfo.Icon</span>
+            <span class="delivery-name">@Result.DeliveryInfo.DisplayName</span>
+        </div>
+        <div class="delivery-detail">
+            <h4>Preparation</h4>
+            <p>@Result.DeliveryInfo.Preparation</p>
+            <h4>How to Administer</h4>
+            <p>@Result.DeliveryInfo.Administration</p>
+            <h4>After Care</h4>
+            <p>@Result.DeliveryInfo.PostCare</p>
+            <h4>Storage Before Use</h4>
+            <p>@Result.DeliveryInfo.StorageBefore</p>
+            @if (Result.DeliveryInfo.Equipment.Length > 0)
+            {
+                <h4>Equipment Needed</h4>
+                <ul>
+                    @foreach (var eq in Result.DeliveryInfo.Equipment)
+                    {
+                        <li>@eq</li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+
+    <h3>LNP Formulation</h3>
+    <p>@Result.LnpFormulation</p>
+
+    @if (Result.Warnings.Length > 0)
+    {
+        <h3>Warnings</h3>
+        <ul class="pillar-flags">
+            @foreach (var w in Result.Warnings)
+            {
+                <li>@w</li>
+            }
+        </ul>
+    }
+
+    @if (Result.Contraindications.Length > 0)
+    {
+        <h3>Contraindications / Action Items</h3>
+        <ul class="recommendations">
+            @foreach (var c in Result.Contraindications)
+            {
+                <li>@c</li>
+            }
+        </ul>
+    }
+
+    @if (Result.RejuvenationScore is not null)
+    {
+        <h3>Rejuvenation Pillar Breakdown</h3>
+        <div class="pillars">
+            @foreach (var p in Result.RejuvenationScore.Pillars)
+            {
+                <div class="pillar">
+                    <ScoreGauge Label="@p.Name" Score="@p.Score" HasData="@p.HasData" />
+                </div>
+            }
+        </div>
+    }
+
+    <div class="therapy-actions">
+        <a href="protocol" class="btn-primary">Start IVT Protocol</a>
+        <button class="btn-secondary" @onclick="OnReset">New Assessment</button>
+    </div>
+</div>

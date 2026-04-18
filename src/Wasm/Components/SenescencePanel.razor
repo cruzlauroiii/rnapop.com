@@ -1,0 +1,50 @@
+@code {
+    [Parameter] public Core.Models.SenescencePanel Senescence { get; set; } = new();
+}
+
+<fieldset>
+    <legend>Senescence / SASP Markers (Optional)</legend>
+    <p class="panel-note">Senescence-associated secretory phenotype markers. Higher = more senescent cell burden.</p>
+    <div class="form-grid">
+        <label>
+            p16^INK4a T-cell expression (relative)
+            <input type="number" step="0.1" @bind="Senescence.P16Ink4a" />
+            <small>1.0 = normal. >2.0 = high burden</small>
+        </label>
+        <label>
+            GDF15 (pg/mL)
+            <input type="number" step="10" @bind="Senescence.Gdf15" />
+            <small>Median ~500. >1500 = elevated</small>
+        </label>
+        <label>
+            IL-6 (pg/mL)
+            <input type="number" step="0.1" @bind="Senescence.Il6" />
+            <small>Median ~1.5. >5 = chronic inflammation</small>
+        </label>
+        <label>
+            TNF-alpha (pg/mL)
+            <input type="number" step="0.1" @bind="Senescence.TnfAlpha" />
+            <small>Median ~1.0</small>
+        </label>
+        <label>
+            SERPINE1/PAI-1 (ng/mL)
+            <input type="number" step="1" @bind="Senescence.Serpine1" />
+            <small>Median ~20. >60 = elevated</small>
+        </label>
+        <label>
+            Activin A (pg/mL)
+            <input type="number" step="10" @bind="Senescence.ActivinA" />
+            <small>Median ~300</small>
+        </label>
+        <label>
+            FGF21 (pg/mL)
+            <input type="number" step="10" @bind="Senescence.Fgf21" />
+            <small>Median ~200</small>
+        </label>
+        <label>
+            TIMP-1 (ng/mL)
+            <input type="number" step="5" @bind="Senescence.Timp1" />
+            <small>Median ~150</small>
+        </label>
+    </div>
+</fieldset>

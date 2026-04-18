@@ -1,0 +1,797 @@
+@page "/guide"
+@page "/guide/{StepParam}"
+@page "/guide/make/{ProtocolStepParam}"
+@implements IAsyncDisposable
+@inject LabWsClient LabClient
+@inject EnvWsClient EnvClient
+@inject QcWsClient QcClient
+@inject NavigationManager Nav
+
+<PageTitle>Step-by-Step Guide</PageTitle>
+
+<div class="wizard-page">
+    @if (_simulation)
+    {
+        <div class="wiz-sim-badge">SIMULATION MODE — no real lab equipment connected, all steps simulated</div>
+    }
+    <div class="wizard-progress">
+        <div class="wiz-progress-bar">
+            <div class="wiz-progress-fill" style="width: @(ProgressPercent)%"></div>
+        </div>
+        <span class="wiz-progress-text">Step @(_step + 1) of @TotalSteps</span>
+    </div>
+
+    <div class="wizard-content">
+        @switch (_phase)
+        {
+            // ========== PHASE 1: LEARN & CHOOSE ==========
+            case Phase.Welcome:
+                <h2>Welcome — Let's Make Medicine Together</h2>
+                <div class="wiz-learn">
+                    <h3>What is this?</h3>
+                    <p>This app helps you create <strong>mRNA medicine</strong> — the same technology used in COVID vaccines (Pfizer, Moderna). Instead of buying medicine from a pharmacy, you'll make it yourself using simple lab equipment that costs about $250 total.</p>
+
+                    <h3>What is mRNA?</h3>
+                    <p><strong>mRNA</strong> (messenger RNA) is a tiny instruction sheet that tells your cells what to build. In a COVID vaccine, the mRNA tells your cells to build a harmless piece of the virus so your immune system can learn to fight it. Here, we use mRNA to tell your cells to build whatever protein you need — antibodies to fight a cold, growth factors to heal a wound, or rejuvenation signals to reverse aging.</p>
+
+                    <h3>Is it safe?</h3>
+                    <p>mRNA breaks down naturally in your body within 24-48 hours — it doesn't change your DNA or stay permanently. That's actually one of its biggest advantages: the effect is temporary and controlled. However, most of these therapies are still in research. The COVID vaccines are the only FDA-approved mRNA products. Everything else here is experimental.</p>
+
+                    <h3>What will I need?</h3>
+                    <p>You'll need: (1) this app (free, runs in your browser), (2) lab equipment controlled by ESP32 chips (~$250 in parts), and (3) chemical reagents (~$1,600 — these are the "ingredients" that can't be made at home). Total: about $2,000 for everything.</p>
+
+                    <h3>How long does it take?</h3>
+                    <p>The entire process takes about 6-8 hours spread over one day. Most of that is waiting — the actual hands-on work is about 1 hour total.</p>
+                </div>
+                break;
+
+            case Phase.ChooseTherapy:
+                <h2>What health issue do you want to address?</h2>
+                <p class="wiz-explain">Pick one. Don't worry — you can always come back and try a different one later.</p>
+                <div class="wiz-choices">
+                    @foreach (var t in TherapyCatalog.All)
+                    {
+                        var therapy = t;
+                        <button class="wiz-choice @(_selectedTherapy?.Id == therapy.Id ? "selected" : "")" @onclick="() => _selectedTherapy = therapy">
+                            <strong>@therapy.Name</strong>
+                            <span>@GetSimpleDescription(therapy.Id)</span>
+                            <small class="therapy-status status-@StatusClass(therapy.Status)">@GetStatusExplain(therapy.Status)</small>
+                        </button>
+                    }
+                </div>
+                break;
+
+            case Phase.LearnTherapy:
+                <h2>How @(_selectedTherapy!.Name) Works</h2>
+                <div class="wiz-learn">
+                    <h3>The problem</h3>
+                    <p>@GetProblemExplain(_selectedTherapy.Id)</p>
+
+                    <h3>The solution</h3>
+                    <p>@GetSolutionExplain(_selectedTherapy.Id)</p>
+
+                    <h3>What the mRNA does inside your body</h3>
+                    <p>@_selectedTherapy.Mechanism</p>
+
+                    <h3>What we'll make</h3>
+                    @foreach (var c in _selectedTherapy.Constructs)
+                    {
+                        <div class="wiz-construct">
+                            <strong>@c.Name</strong>
+                            <p>@c.Function</p>
+                            <p class="wiz-field-help">This is a piece of mRNA that is @c.LengthNt "letters" long (nucleotides — the building blocks of RNA, like letters in a word). We get the recipe from @c.Source.</p>
+                        </div>
+                    }
+
+                    <h3>How you'll take it</h3>
+                    <p>@_selectedTherapy.LnpFormulation</p>
+                    <p class="wiz-field-help"><strong>LNP</strong> = Lipid Nanoparticle. Think of it as a tiny bubble made of fat, about 1000x smaller than a human hair. The mRNA goes inside this bubble so it can survive in your body and get into your cells. Without the bubble, the mRNA would be destroyed by enzymes in your blood within seconds.</p>
+
+                    <h3>Current status</h3>
+                    <p>@_selectedTherapy.Status</p>
+                    <p class="wiz-field-help">
+                        <strong>Research</strong> = only tested in lab dishes and sometimes in animals. No human data yet.<br/>
+                        <strong>Preclinical</strong> = tested in animals with good results. Getting ready for human trials.<br/>
+                        <strong>Clinical</strong> = currently being tested in real people in a formal medical trial.<br/>
+                        <strong>Approved</strong> = officially approved by the FDA (like COVID vaccines). Safe to use.
+                    </p>
+                </div>
+                break;
+
+            case Phase.EnterInfo:
+                <h2>Tell us about yourself</h2>
+                <p class="wiz-explain">We need some basic information to check if this therapy is right and calculate the correct dose. This works for both <strong>humans and pets</strong> — just select who it's for. <strong>All data stays in your browser.</strong></p>
+                <div class="wiz-form">
+                    <label class="wiz-field">
+                        <span class="wiz-field-name">Who is this for?</span>
+                        <select @bind="_input.Species">
+                            <option value="@Species.Human">Human</option>
+                            <option value="@Species.Dog">Dog</option>
+                            <option value="@Species.Cat">Cat</option>
+                            <option value="@Species.Horse">Horse</option>
+                            <option value="@Species.Other">Other animal</option>
+                        </select>
+                        <span class="wiz-field-help">mRNA therapy works in all mammals. The same mRNA constructs are used — only the dose changes based on body weight. Merck already sells mRNA vaccines for dogs (canine flu) and cats (feline leukemia) under the Nobivac NXT brand.</span>
+                    </label>
+                    @if (_input.Species != Species.Human)
+                    {
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">Breed (optional)</span>
+                            <input type="text" @bind="_input.PetBreed" placeholder="e.g. Golden Retriever, Siamese" />
+                            <span class="wiz-field-help">Some breeds have different sensitivities. Small breeds need lower doses.</span>
+                        </label>
+                    }
+                    <label class="wiz-field">
+                        <span class="wiz-field-name">@(_input.Species == Species.Human ? "How old are you?" : $"How old is the {_input.Species.ToString().ToLower()}?")</span>
+                        <input type="number" @bind="_input.Age" />
+                        <span class="wiz-field-help">@(_input.Species == Species.Human ? "Your age affects reference ranges and dose." : "In animal years. Dogs: 1-15, cats: 1-20, horses: 1-30.")</span>
+                    </label>
+                    <label class="wiz-field">
+                        <span class="wiz-field-name">Biological sex</span>
+                        <select @bind="_input.Sex"><option value="@Sex.Male">Male</option><option value="@Sex.Female">Female</option></select>
+                    </label>
+                    <label class="wiz-field">
+                        <span class="wiz-field-name">Weight</span>
+                        <input type="number" step="0.5" @bind="_input.WeightKg" /> kg
+                        <span class="wiz-field-help">@(_input.Species switch { Species.Dog => "Small dog: 3-10kg, medium: 10-25kg, large: 25-45kg, giant: 45-80kg", Species.Cat => "Most cats: 3-6kg", Species.Horse => "Most horses: 400-600kg", _ => "Average adult human: 60-80kg" })</span>
+                    </label>
+                </div>
+
+                @if (_selectedTherapy?.Id is "common-cold" or "influenza" or "covid19")
+                {
+                    <h3>Your symptoms</h3>
+                    <p class="wiz-explain">The most important thing here is <strong>when you first got sick</strong>. mRNA medicine works best when taken early — before the virus has had time to multiply to its peak.</p>
+                    <div class="wiz-form">
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">When did you first feel sick?</span>
+                            <input type="number" @bind="_input.SymptomOnsetHours" /> hours ago
+                            <span class="wiz-field-help">Try to remember the very first moment you felt "off." @(_selectedTherapy.Id == "common-cold" ? "For a cold, treatment works best within 24 hours." : _selectedTherapy.Id == "influenza" ? "For flu, treatment works best within 48 hours." : "For COVID, treatment works within 5 days (120 hours).")</span>
+                        </label>
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">What's your temperature right now?</span>
+                            <input type="number" step="0.1" @bind="_input.TemperatureCelsius" /> °C
+                            <span class="wiz-field-help">Use a thermometer. <strong>Normal</strong> = 36.5-37.5°C. <strong>Fever</strong> = above 38.0°C. A fever means your immune system is already fighting hard — and might mean this isn't just a cold (could be flu or COVID).</span>
+                        </label>
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">How bad do you feel overall?</span>
+                            <input type="number" min="1" max="10" @bind="_input.SeverityScore" />
+                            <span class="wiz-field-help">1 = "I barely notice anything." 5 = "I feel pretty bad but can still get things done." 10 = "I'm in bed and can't function."</span>
+                        </label>
+                        <div class="wiz-checkboxes">
+                            <span class="wiz-field-name">Check everything you're experiencing:</span>
+                            <label><input type="checkbox" @bind="_input.HasCough" /> Cough</label>
+                            <label><input type="checkbox" @bind="_input.HasSoreThroat" /> Sore throat</label>
+                            <label><input type="checkbox" @bind="_input.HasCongestion" /> Stuffy or runny nose</label>
+                            <label><input type="checkbox" @bind="_input.HasBodyAches" /> Body aches or muscle pain</label>
+                            <label><input type="checkbox" @bind="_input.HasFatigue" /> Feeling very tired</label>
+                            <label><input type="checkbox" @bind="_input.HasHeadache" /> Headache</label>
+                        </div>
+                    </div>
+                }
+                @if (_selectedTherapy?.Id == "covid19")
+                {
+                    <h3>COVID vaccination history</h3>
+                    <div class="wiz-form">
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">How many COVID vaccine shots total?</span>
+                            <input type="number" min="0" @bind="_input.VaccinationDoses" />
+                            <span class="wiz-field-help">Count all of them — first two shots plus any boosters. If you've never been vaccinated, put 0.</span>
+                        </label>
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">How long ago was your last shot?</span>
+                            <input type="number" @bind="_input.DaysSinceLastVaccine" /> days
+                            <span class="wiz-field-help">If it was about 6 months ago, that's roughly 180 days. Vaccine protection fades after about 6 months.</span>
+                        </label>
+                    </div>
+                }
+                @if (_selectedTherapy?.Id == "wound-healing")
+                {
+                    <h3>About your wound</h3>
+                    <div class="wiz-form">
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">What kind of wound?</span>
+                            <select @bind="_input.WoundType"><option value="">Pick one...</option><option>Surgical</option><option>Diabetic ulcer</option><option>Burns</option><option>Chronic/pressure</option><option>Traumatic</option></select>
+                        </label>
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">How big is the wound?</span>
+                            <input type="number" step="0.5" @bind="_input.WoundAreaCm2" /> cm²
+                            <span class="wiz-field-help">Measure the wound's length and width in centimeters, then multiply. A wound that's 3cm long and 5cm wide = 15 cm².</span>
+                        </label>
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">How many days old is the wound?</span>
+                            <input type="number" @bind="_input.WoundAgeDays" /> days
+                            <span class="wiz-field-help">A "chronic" wound (over 30 days old that isn't healing) benefits most from this therapy.</span>
+                        </label>
+                        <label><input type="checkbox" @bind="_input.IsDiabetic" /> I have diabetes</label>
+                    </div>
+                }
+                @if (_selectedTherapy?.Id == "hair-regrowth")
+                {
+                    <h3>Hair loss details</h3>
+                    <div class="wiz-form">
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">How much hair have you lost?</span>
+                            <input type="number" min="1" max="7" @bind="_input.HairLossScale" />
+                            <span class="wiz-field-help">1 = barely noticeable thinning. 3 = clear receding/thinning. 5 = large bare areas. 7 = mostly bald on top. Lower numbers = better chance of regrowth because the hair roots (follicles) are still alive, just asleep.</span>
+                        </label>
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">How many years have you been losing hair?</span>
+                            <input type="number" @bind="_input.HairLossYears" />
+                        </label>
+                    </div>
+                }
+                @if (_selectedTherapy?.Id == "muscle-loss")
+                {
+                    <h3>Muscle strength</h3>
+                    <p class="wiz-explain">These measurements come from a doctor or physical therapist. If you don't have them, ask your doctor for a "sarcopenia screening."</p>
+                    <div class="wiz-form">
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">Grip strength</span>
+                            <input type="number" step="0.5" @bind="_input.GripStrengthKg" /> kg
+                            <span class="wiz-field-help">Squeeze a grip dynamometer as hard as you can. <strong>Low</strong> = below 27 kg for men, below 16 kg for women. You can buy a grip meter on Amazon for ~$25, or a doctor can test this.</span>
+                        </label>
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">Muscle mass index</span>
+                            <input type="number" step="0.1" @bind="_input.MuscleMassIndex" /> kg/m²
+                            <span class="wiz-field-help">This requires a body scan (DXA or bioimpedance). Your doctor divides your arm+leg muscle weight by your height squared. <strong>Low</strong> = below 7.0 for men, below 5.5 for women.</span>
+                        </label>
+                        <label><input type="checkbox" @bind="_input.HasFalls" /> I've fallen in the past 12 months</label>
+                    </div>
+                }
+                @if (_selectedTherapy?.Id == "allergy")
+                {
+                    <h3>Your allergies</h3>
+                    <div class="wiz-form">
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">How bad are your allergies?</span>
+                            <input type="number" min="1" max="10" @bind="_input.AllergySeverity" />
+                            <span class="wiz-field-help">1 = occasional sneezing. 5 = daily symptoms, need antihistamines. 10 = severely impacts my life, nothing helps enough.</span>
+                        </label>
+                        <div class="wiz-checkboxes">
+                            <span class="wiz-field-name">What are you allergic to? (check all that apply)</span>
+                            @foreach (var a in _allergenOptions)
+                            {
+                                var name = a;
+                                <label><input type="checkbox" checked="@_allergens.Contains(name)" @onchange="e => ToggleAllergen(name, (bool)e.Value!)" /> @name</label>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (_selectedTherapy?.Id == "cancer-neoantigen")
+                {
+                    <h3>Cancer details</h3>
+                    <p class="wiz-explain">This therapy is personalized to YOUR specific tumor. It requires a tissue sample (biopsy) from the tumor and a blood test (HLA typing). If you don't have these, your oncologist can order them.</p>
+                    <div class="wiz-form">
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">What type of cancer?</span>
+                            <select @bind="_input.TumorType"><option value="">Pick one...</option><option>Melanoma</option><option>Pancreatic</option><option>Colorectal</option><option>Lung (NSCLC)</option><option>Breast</option><option>Head & Neck</option><option>Other</option></select>
+                        </label>
+                        <label><input type="checkbox" @bind="_input.TumorBiopsyAvailable" /> I have a tumor biopsy available</label>
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">HLA type</span>
+                            <input type="text" @bind="_input.HlaType" placeholder="e.g. HLA-A*02:01" />
+                            <span class="wiz-field-help"><strong>HLA</strong> = Human Leukocyte Antigen. It's like a "name tag" on your cells. The cancer vaccine needs to know your HLA type to design proteins that your immune system can recognize. A simple blood test reveals this.</span>
+                        </label>
+                    </div>
+                }
+                break;
+
+            case Phase.ShowResult:
+                <h2>Your Assessment Result</h2>
+                @if (_result is not null)
+                {
+                    <div class="wiz-result @(_result.Verdict == TherapyVerdict.Recommended ? "good" : _result.Verdict == TherapyVerdict.Conditional ? "okay" : "bad")">
+                        <div class="wiz-result-verdict">
+                            @(_result.Verdict == TherapyVerdict.Recommended ? "Recommended — this therapy is a good fit for you"
+                              : _result.Verdict == TherapyVerdict.Conditional ? "Possible — may help, but with some conditions"
+                              : "Not recommended right now — see why below")
+                        </div>
+                        <div class="wiz-result-score">Confidence: @_result.ConfidenceScore.ToString("F0") out of 100</div>
+                    </div>
+
+                    <div class="wiz-learn">
+                        <h3>What this means</h3>
+                        <p>@_result.Summary</p>
+
+                        <h3>What we'll make for you</h3>
+                        @foreach (var c in _result.Constructs)
+                        {
+                            <div class="wiz-construct">
+                                <strong>@c.Name</strong> — @c.Function
+                            </div>
+                        }
+
+                        <h3>How you'll take it: @_result.DeliveryInfo.DisplayName @_result.DeliveryInfo.Icon</h3>
+                        <p>@_result.DeliveryInfo.ShortDescription</p>
+                        <p><strong>Amount:</strong> @_result.Dose.AmountUg micrograms (µg) — that's about @((_result.Dose.AmountUg / 1000.0).ToString("F2")) milligrams, an incredibly tiny amount. For reference, a grain of salt weighs about 60,000 µg.</p>
+                        <p><strong>Schedule:</strong> @_result.Dose.Schedule</p>
+
+                        @if (_result.Warnings.Length > 0)
+                        {
+                            <h3>Important things to know</h3>
+                            <ul class="wiz-warnings">@foreach (var w in _result.Warnings) { <li>@w</li> }</ul>
+                        }
+                    </div>
+                }
+                break;
+
+            // ========== PHASE 2: CONNECT LAB ==========
+            case Phase.ConnectLab:
+                <h2>Connect to Your Lab Equipment</h2>
+                <div class="wiz-learn">
+                    <h3>What's happening here?</h3>
+                    <p>Your lab equipment is controlled by small, cheap computer chips called <strong>ESP32</strong> (they cost $4 each). These chips are wired to every piece of equipment — the heater, the pumps, the measuring devices, everything.</p>
+                    <p>This app talks to those chips over your WiFi network using something called <strong>WebSocket</strong> (WSS). Think of it like a live phone call:</p>
+                    <div class="wiz-instruction">
+                        <p>
+                            <strong>This app</strong> says: "Heat to 37 degrees"<br/>
+                            ↕ WiFi<br/>
+                            <strong>Lab equipment</strong> does it, then says back: "Temperature is now 36.8° and rising..."
+                        </p>
+                    </div>
+                    <p>This "phone call" happens twice per second, so you see live readings on screen.</p>
+
+                    <h3>Don't have hardware yet?</h3>
+                    <p>That's fine! You can practice with a simulator. Open a command prompt on your computer and type:</p>
+                    <div class="wiz-instruction"><p><code>dotnet run --project src/MockEsp32</code></p></div>
+                    <p>It will show an address like <code>wss://0.0.0.0:9983</code>. Use <code>wss://localhost:9983</code> below.</p>
+
+                    <h3>Enter the address and connect</h3>
+                    <div class="wiz-form">
+                        <label class="wiz-field">
+                            <span class="wiz-field-name">Lab address</span>
+                            <input type="text" @bind="_wssUrl" />
+                            <span class="wiz-field-help">Paste the address your lab equipment showed when it started up, or use wss://localhost:9983 for the simulator.</span>
+                        </label>
+                    </div>
+                </div>
+
+                @if (LabClient.Connected)
+                {
+                    <div class="wiz-result good"><div class="wiz-result-verdict">Connected — all instruments online</div></div>
+                }
+                else if (_connectError is not null)
+                {
+                    <div class="wiz-result okay">
+                        <div class="wiz-result-verdict">Could not connect to lab — but you can still continue!</div>
+                    </div>
+                    <p class="wiz-explain">
+                        The app couldn't reach the lab equipment at <code>@_wssUrl</code>. This is normal if:
+                    </p>
+                    <ul class="wiz-warnings">
+                        <li>You don't have hardware yet (most people start here)</li>
+                        <li>You're viewing this from GitHub Pages (can't reach localhost)</li>
+                        <li>The mock server isn't running on your computer</li>
+                    </ul>
+                    <p class="wiz-explain">
+                        <strong>Click Next to continue in SIMULATION MODE.</strong> You'll go through every step of the protocol
+                        exactly as you would with real equipment — see all the instructions, learn what each step does,
+                        and understand the full process. The only difference is the equipment readings are simulated numbers
+                        instead of real sensor data. When you get your hardware later, you can come back and do it for real.
+                    </p>
+                }
+                else
+                {
+                    <p class="wiz-explain">Or click Next to <strong>skip connecting</strong> and run through the protocol in simulation mode — great for learning!</p>
+                }
+                break;
+
+            // ========== PHASE 3: PROTOCOL STEPS ==========
+            case Phase.ProtocolStep:
+                @if (_protocol is not null && _protocolStepIdx < _protocol.Steps.Length)
+                {
+                    var ps = _protocol.Steps[_protocolStepIdx];
+                    <h2>Making your mRNA — Step @(ps.Order) of @(_protocol.Steps.Length)</h2>
+                    <div class="wiz-progress-bar" style="margin-bottom:1rem;">
+                        <div class="wiz-progress-fill" style="width: @(100.0 * (_protocolStepIdx + 1) / _protocol.Steps.Length)%"></div>
+                    </div>
+
+                    <h3>@ps.Name</h3>
+
+                    <div class="wiz-learn">
+                        <h3>Why this step?</h3>
+                        <p>@GetWhyExplain(ps)</p>
+
+                        <h3>What to do</h3>
+                        <div class="wiz-instruction">
+                            <p>@GetPlainInstruction(ps)</p>
+                        </div>
+
+                        @if (ps.Temperature > 0 || ps.DurationMinutes > 0 || ps.TargetRpm > 0 || ps.Voltage > 0)
+                        {
+                            <h3>Settings</h3>
+                            @if (ps.Temperature > 0) { <p><strong>Temperature:</strong> @ps.Temperature°C @(ps.Temperature == 37 ? "(body temperature — enzymes work best here)" : "")</p> }
+                            @if (ps.TargetRpm > 0) { <p><strong>Centrifuge speed:</strong> @ps.TargetRpm RPM (revolutions per minute — how fast the tube spins)</p> }
+                            @if (ps.Voltage > 0) { <p><strong>Voltage:</strong> @ps.Voltage V (volts — the electrical force that pushes RNA through the gel)</p> }
+                        }
+
+                        @if (!string.IsNullOrEmpty(ps.Notes))
+                        {
+                            <h3>Detailed notes (for advanced users)</h3>
+                            <p class="wiz-field-help">@ps.Notes</p>
+                        }
+                    </div>
+
+                    @if (_timerRunning)
+                    {
+                        <div class="wiz-timer">
+                            <div class="wiz-timer-display">@(_timerRemaining / 60):@((_timerRemaining % 60).ToString("D2"))</div>
+                            <div class="wiz-timer-label">@(_timerRemaining > 0 ? "Waiting... don't touch anything." : "Time's up! Click Next to continue.")</div>
+                            <div class="wiz-progress-bar">
+                                <div class="wiz-progress-fill wiz-timer-bar" style="width: @(100.0 * (1.0 - (double)_timerRemaining / _timerTotal))%"></div>
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <h2>You did it!</h2>
+                    <div class="wiz-result good">
+                        <div class="wiz-result-verdict">Your @(_selectedTherapy?.Name) mRNA is ready</div>
+                    </div>
+                    <div class="wiz-learn">
+                        <h3>What you just accomplished</h3>
+                        <p>You completed all @(_protocol?.Steps.Length ?? 0) steps. You now have mRNA wrapped in lipid nanoparticles (LNPs) — the same format as a COVID vaccine. Store it at -80°C (use the lab freezer) until you're ready to use it.</p>
+                        <h3>Next: taking the medicine</h3>
+                        <p>@_result?.DeliveryInfo.Preparation</p>
+                        <p>@_result?.DeliveryInfo.Administration</p>
+                        <p>@_result?.DeliveryInfo.PostCare</p>
+                    </div>
+                }
+                break;
+        }
+    </div>
+
+    <div class="wizard-buttons">
+        @if (_step > 0 && !_timerRunning)
+        {
+            <button class="btn-secondary" @onclick="Back">Back</button>
+        }
+        <button class="btn-primary" @onclick="Next" disabled="@(!CanGoNext)">
+            @NextButtonText
+        </button>
+    </div>
+</div>
+
+@code {
+    enum Phase { Welcome, ChooseTherapy, LearnTherapy, EnterInfo, ShowResult, ConnectLab, ProtocolStep }
+
+    [Parameter] public string? StepParam { get; set; }
+    [Parameter] public string? ProtocolStepParam { get; set; }
+
+    private Phase _phase = Phase.Welcome;
+    private int _step = 0;
+    private TherapyOption? _selectedTherapy;
+    private TherapyInput _input = new();
+    private TherapyResult? _result;
+    private IvtProtocol? _protocol;
+    private int _protocolStepIdx = 0;
+    private string _wssUrl = "wss://localhost:9983";
+    private string? _connectError;
+    private bool _simulation;
+    private List<string> _allergens = [];
+    private readonly string[] _allergenOptions = ["Birch pollen", "Dust mite", "Cat", "Grass pollen", "Dog", "Mold"];
+
+    // Timer
+    private bool _timerRunning;
+    private int _timerRemaining;
+    private int _timerTotal;
+    private System.Threading.Timer? _timer;
+
+    private int TotalSteps => 6 + (_protocol?.Steps.Length ?? 0);
+    private double ProgressPercent => 100.0 * _step / Math.Max(1, TotalSteps - 1);
+
+    private static readonly string[] StepSlugs = [
+        "what-is-mrna-medicine",
+        "choose-your-therapy",
+        "how-this-therapy-works",
+        "enter-your-information",
+        "your-therapy-result",
+        "connect-lab-equipment"
+    ];
+
+    private static readonly string[] ProtocolSlugs = [
+        "linearize-dna-template",
+        "purify-template-dna",
+        "measure-dna-concentration",
+        "transcribe-dna-to-mrna",
+        "remove-dna-with-dnase",
+        "purify-mrna",
+        "check-mrna-purity",
+        "verify-mrna-size-on-gel",
+        "combine-mrna-constructs",
+        "encapsulate-in-lipid-nanoparticles",
+        "remove-ethanol-by-dialysis",
+        "final-quality-check",
+        "prepare-for-delivery",
+        "store-mrna-at-minus-80",
+        "your-mrna-is-ready",
+    ];
+
+    private string GetProtocolSlug(int idx)
+    {
+        if (_protocol is null || idx >= _protocol.Steps.Length) return "complete";
+        // Use predefined slug if available, otherwise generate from step name
+        if (idx < ProtocolSlugs.Length) return ProtocolSlugs[idx];
+        return _protocol.Steps[idx].Name.ToLower()
+            .Replace(" ", "-").Replace(":", "").Replace("(", "").Replace(")", "")
+            .Replace("--", "-").Trim('-');
+    }
+
+    private void UpdateUrl()
+    {
+        string url = _phase == Phase.ProtocolStep
+            ? $"guide/make/{GetProtocolSlug(_protocolStepIdx)}"
+            : $"guide/{StepSlugs[(int)_phase]}";
+        Nav.NavigateTo(url, replace: true);
+    }
+
+    private bool CanGoNext => _phase switch
+    {
+        Phase.Welcome => true,
+        Phase.ChooseTherapy => _selectedTherapy is not null,
+        Phase.LearnTherapy => true,
+        Phase.EnterInfo => true,
+        Phase.ShowResult => true,
+        Phase.ConnectLab => true,  // Always clickable — first click connects, second click proceeds
+        Phase.ProtocolStep => true,  // Always clickable — timer is informational, not blocking
+        _ => true,
+    };
+
+    private string NextButtonText => _phase switch
+    {
+        Phase.Welcome => "Let's get started",
+        Phase.ChooseTherapy => _selectedTherapy is not null ? $"Learn about {_selectedTherapy.Name}" : "Pick a therapy first",
+        Phase.LearnTherapy => "Next — enter my info",
+        Phase.EnterInfo => "Check if this is right for me",
+        Phase.ShowResult => "Next — connect my lab",
+        Phase.ConnectLab when !LabClient.Connected && _connectError is null => "Connect to lab",
+        Phase.ConnectLab when !LabClient.Connected => "Continue in simulation mode",
+        Phase.ConnectLab => "Next — start making the mRNA",
+        Phase.ProtocolStep when _protocol is not null && _protocolStepIdx >= _protocol.Steps.Length => "Finish",
+        Phase.ProtocolStep when _timerRunning && _timerRemaining > 0 => $"Next ({_timerRemaining / 60}:{(_timerRemaining % 60):D2} remaining — or skip)",
+        Phase.ProtocolStep => "Next step",
+        _ => "Next",
+    };
+
+    protected override void OnInitialized()
+    {
+        LabClient.OnStatusChanged += () => InvokeAsync(StateHasChanged);
+        EnvClient.OnStatusChanged += () => InvokeAsync(StateHasChanged);
+    }
+
+    private async Task Next()
+    {
+        switch (_phase)
+        {
+            case Phase.Welcome:
+                _phase = Phase.ChooseTherapy; _step++; break;
+            case Phase.ChooseTherapy:
+                _phase = Phase.LearnTherapy; _step++; break;
+            case Phase.LearnTherapy:
+                _phase = Phase.EnterInfo; _step++; break;
+            case Phase.EnterInfo:
+                _input.TherapyId = _selectedTherapy!.Id;
+                _input.Allergens = _allergens.ToArray();
+                _result = TherapyScorer.Score(_input);
+                _phase = Phase.ShowResult; _step++;
+                break;
+            case Phase.ShowResult:
+                _phase = Phase.ConnectLab; _step++; break;
+            case Phase.ConnectLab:
+                if (!LabClient.Connected && _connectError is null)
+                {
+                    // First click: try to connect
+                    try
+                    {
+                        await Task.WhenAll(LabClient.ConnectAsync(_wssUrl), EnvClient.ConnectAsync(_wssUrl), QcClient.ConnectAsync(_wssUrl));
+                        if (!LabClient.Connected) _connectError = LabClient.Error ?? "Connection failed";
+                    }
+                    catch (Exception ex) { _connectError = ex.Message; }
+
+                    // If connected, proceed immediately
+                    if (LabClient.Connected)
+                    {
+                        _simulation = false;
+                        _protocol = TherapyProtocols.GetProtocol(_selectedTherapy!.Id);
+                        _protocolStepIdx = 0;
+                        _phase = Phase.ProtocolStep; _step++;
+                        StartProtocolStep();
+                    }
+                }
+                else
+                {
+                    // Second click (or already connected): proceed
+                    if (!LabClient.Connected) _simulation = true; // No connection = simulation mode
+                    _protocol = TherapyProtocols.GetProtocol(_selectedTherapy!.Id);
+                    _protocolStepIdx = 0;
+                    _phase = Phase.ProtocolStep; _step++;
+                    StartProtocolStep();
+                }
+                break;
+            case Phase.ProtocolStep:
+                if (_protocol is not null && _protocolStepIdx < _protocol.Steps.Length)
+                {
+                    _protocol.Steps[_protocolStepIdx].Completed = true;
+                    _protocolStepIdx++;
+                    _step++;
+                    StopTimer();
+                    if (_protocolStepIdx < _protocol.Steps.Length) StartProtocolStep();
+                }
+                else { _step = 0; _phase = Phase.Welcome; } // Restart
+                break;
+        }
+        UpdateUrl();
+    }
+
+    private void Back()
+    {
+        StopTimer();
+        if (_phase == Phase.ProtocolStep && _protocolStepIdx > 0) { _protocolStepIdx--; _step--; StartProtocolStep(); }
+        else if (_phase > Phase.Welcome) { _phase--; _step = Math.Max(0, _step - 1); }
+        UpdateUrl();
+    }
+
+    private void StartProtocolStep()
+    {
+        if (_protocol is null || _protocolStepIdx >= _protocol.Steps.Length) return;
+        var ps = _protocol.Steps[_protocolStepIdx];
+
+        // Auto-send equipment commands
+        if (LabClient.Connected && ps.Equipment != EquipmentType.None)
+        {
+            _ = ps.Equipment switch
+            {
+                EquipmentType.HeatBlock => Task.WhenAll(LabClient.SendCommandAsync(LabCommand.HeatBlockSetTemp, value: ps.Temperature), LabClient.SendCommandAsync(LabCommand.HeatBlockStart)),
+                EquipmentType.Centrifuge => LabClient.SendCommandAsync(LabCommand.CentrifugeStart, value: ps.TargetRpm, value2: ps.DurationMinutes * 60),
+                EquipmentType.Spectrophotometer => LabClient.SendCommandAsync(LabCommand.SpectrometerMeasure),
+                EquipmentType.GelElectrophoresis => LabClient.SendCommandAsync(LabCommand.GelStart, value: ps.Voltage, value2: ps.DurationMinutes),
+                EquipmentType.SyringePump => Task.WhenAll(LabClient.SendCommandAsync(LabCommand.PumpSetFlow, 0, 9, 3), LabClient.SendCommandAsync(LabCommand.PumpSetFlow, 1, 3, 1)),
+                _ => Task.CompletedTask,
+            };
+        }
+
+        // Auto-start timer if step has duration
+        if (ps.DurationMinutes > 0)
+        {
+            // In simulation mode: 5 seconds per step instead of real minutes
+            _timerTotal = _simulation ? 5 : ps.DurationMinutes * 60;
+            _timerRemaining = _timerTotal;
+            _timerRunning = true;
+            _timer = new System.Threading.Timer(_ =>
+            {
+                _timerRemaining--;
+                if (_timerRemaining <= 0) { _timerRunning = false; _timer?.Dispose(); }
+                InvokeAsync(StateHasChanged);
+            }, null, 1000, 1000);
+        }
+    }
+
+    private void StopTimer()
+    {
+        _timerRunning = false;
+        _timerRemaining = 0;
+        _timer?.Dispose();
+        _timer = null;
+    }
+
+    // ===== Plain English helpers =====
+
+    static string GetSimpleDescription(string id) => id switch
+    {
+        "rejuvenation" => "Reverse aging at the cellular level",
+        "common-cold" => "Got a cold? mRNA antibodies can fight it",
+        "influenza" => "Fighting the flu with mRNA medicine",
+        "covid19" => "COVID-19 — treatment or extra protection",
+        "universal-flu" => "One vaccine for all flu strains — forever",
+        "cancer-neoantigen" => "A vaccine made from YOUR tumor's DNA",
+        "wound-healing" => "Speed up wound healing with growth signals",
+        "hair-regrowth" => "Wake up sleeping hair follicles",
+        "muscle-loss" => "Reverse age-related muscle loss",
+        "allergy" => "Retrain your immune system to stop reacting",
+        _ => "",
+    };
+
+    static string GetStatusExplain(string status) => status switch
+    {
+        _ when status.Contains("Approved") => "FDA approved — proven safe",
+        _ when status.Contains("Clinical") => "In human trials now",
+        _ when status.Contains("Preclinical") => "Tested in animals, not yet in humans",
+        _ => "Early research stage",
+    };
+
+    static string StatusClass(string status) => status switch
+    {
+        _ when status.Contains("Approved") => "approved",
+        _ when status.Contains("Clinical") => "clinical",
+        _ when status.Contains("Preclinical") => "preclinical",
+        _ => "research",
+    };
+
+    static string GetProblemExplain(string id) => id switch
+    {
+        "common-cold" => "Rhinoviruses (the bugs that cause colds) have over 160 different versions, which is why there's no cure — your body can't prepare for all of them. By the time your immune system figures out which version you caught, you've already been sick for a week.",
+        "influenza" => "The flu virus mutates every year, which is why you need a new flu shot annually — and why it only works about 40-60% of the time. If you're already sick, your body is in a race against the virus, and the virus is winning.",
+        "covid19" => "SARS-CoV-2 keeps mutating into new variants. Existing vaccines may not fully protect against new strains. If you're already infected, your body needs help fighting the virus NOW — not in the 2 weeks it takes to build natural immunity.",
+        "cancer-neoantigen" => "Cancer cells have mutations that make them different from normal cells. Your immune system SHOULD kill them, but cancer has tricks to hide. A personalized vaccine teaches your immune system exactly what YOUR cancer looks like so it can find and destroy it.",
+        "wound-healing" => "Chronic wounds (especially in diabetics) don't heal because the body can't grow enough new blood vessels at the wound site. Without blood vessels, oxygen and nutrients can't reach the wound, and healing stalls.",
+        "hair-regrowth" => "In pattern baldness, hair follicles aren't dead — they're asleep. A signaling pathway called Wnt (pronounced 'wint') that normally keeps follicles cycling between growth and rest phases gets shut down by hormones (DHT). The follicles shrink and stop producing visible hair.",
+        "muscle-loss" => "After age 50, your body produces increasing amounts of a protein called myostatin that actively BLOCKS muscle growth. It's like having the parking brake on while trying to drive. Exercise helps, but myostatin limits how much muscle you can build back.",
+        "allergy" => "Your immune system has mistakenly learned that harmless things (pollen, cat dander, dust mites) are dangerous invaders. It produces IgE antibodies that trigger mast cells to release histamine — causing sneezing, itching, swelling. Traditional allergy shots try to retrain this, but use whole allergens that can cause dangerous reactions.",
+        "universal-flu" => "There are 20 known types of flu (18 influenza A subtypes + 2 influenza B lineages). Current vaccines only cover 3-4 types per year, guessed months in advance. If scientists guess wrong, the vaccine doesn't work well.",
+        "rejuvenation" => "As you age, chemical marks on your DNA (called epigenetic marks) accumulate and lock your cells into an 'old' state. These marks tell cells to produce less energy, repair DNA poorly, and eventually stop dividing. Your cells aren't broken — they're just stuck in 'old mode.'",
+        _ => "",
+    };
+
+    static string GetSolutionExplain(string id) => id switch
+    {
+        "common-cold" => "We make mRNA that tells your cells to produce a special antibody that works against ALL 160+ rhinovirus versions at once (it targets a part of the virus that doesn't change between versions). We also make mRNA for interferon-lambda — a natural antiviral signal that boosts your entire immune defense.",
+        "influenza" => "We make mRNA for a broadly neutralizing antibody (CR9114) that works against both influenza A and B. Unlike a vaccine (which takes 2 weeks to work), this gives your body ready-made antibodies immediately — like calling in reinforcements instead of waiting to train new soldiers.",
+        "covid19" => "We make mRNA for a nanobody (a small, simple antibody) that targets a part of the virus that doesn't change between variants. This provides immediate passive immunity — instant protection while your own immune system catches up.",
+        "cancer-neoantigen" => "We sequence your tumor's DNA to find mutations unique to YOUR cancer. Then we design mRNA encoding up to 34 of these mutant proteins (neoantigens). When injected, your immune cells learn to recognize these specific mutations and hunt down every cancer cell carrying them.",
+        "wound-healing" => "We make mRNA for VEGF-A (Vascular Endothelial Growth Factor) — the signal that tells your body to grow new blood vessels. Applied directly to the wound as a gel, it kickstarts angiogenesis (blood vessel formation), bringing oxygen and nutrients to heal the wound. The mRNA only lasts 24-48 hours, which is actually perfect — permanent VEGF would cause leaky vessels.",
+        "hair-regrowth" => "We make mRNA for WNT3A and Sonic Hedgehog (SHH) — the signals that wake up sleeping follicles. Delivered into the scalp via dissolving microneedle patches, these signals reactivate the Wnt pathway, pushing follicles from their dormant 'telogen' phase back into active 'anagen' (growth) phase.",
+        "muscle-loss" => "We make mRNA for follistatin — a protein that blocks myostatin (the muscle growth brake). It's like releasing the parking brake. Combined with exercise (which provides the gas pedal), your muscles can grow again even in old age. In mouse studies, blocking myostatin doubled muscle mass.",
+        "allergy" => "We make mRNA for MODIFIED versions of your allergens. These modified proteins can train your T-regulatory cells (the immune system's peacekeepers) to tolerate the real allergen, WITHOUT triggering the dangerous IgE antibodies that cause allergic reactions. It's like allergy shots but much safer.",
+        "universal-flu" => "We make mRNA encoding ALL 20 types of flu surface protein (hemagglutinin) in a single injection. Your immune system develops antibodies against all of them simultaneously. Proven in mice to protect against every flu type — like getting a lifetime flu shield in one shot.",
+        "rejuvenation" => "We make mRNA for three proteins (Oct4, Sox2, Klf4 — called 'Yamanaka factors') that can reset epigenetic marks to a younger state. The key is TEMPORARY expression — mRNA lasts only 24-48 hours, which is enough to loosen the 'old' marks without fully resetting the cell to a stem cell (which would be dangerous). It's like defragmenting a hard drive without erasing the files.",
+        _ => "",
+    };
+
+    static string GetWhyExplain(IvtStep step)
+    {
+        if (step.Name.Contains("Template Prep")) return "Before we can make mRNA, we need a DNA template — like a master copy of a document that the copying machine (T7 enzyme) will read. This step prepares that master copy by cutting the circular plasmid DNA into a straight line so the enzyme knows where to start and where to stop.";
+        if (step.Name.Contains("Purify Template")) return "The cutting step left behind enzyme fragments and buffer chemicals mixed with our DNA. We need to clean it up — like filtering out coffee grounds before drinking. The spin column traps the DNA while washing away everything else.";
+        if (step.Name.Contains("QC") && step.Name.Contains("Template")) return "Before starting the expensive main reaction, we check that our DNA template is clean and concentrated enough. The UV spectrophotometer shines ultraviolet light through the sample — DNA absorbs UV at a specific wavelength (260nm), so the amount absorbed tells us how much DNA we have.";
+        if (step.Name.Contains("IVT:")) return "This is THE key step — in vitro transcription (IVT). The T7 enzyme reads the DNA template and builds mRNA copies, letter by letter. We use a modified 'letter' (m1-pseudouridine instead of regular uridine) so the mRNA won't trigger your immune system's alarms. The CleanCap reagent adds a special cap to the front of the mRNA that tells your cells' ribosomes 'this is real — start translating me into protein.'";
+        if (step.Name.Contains("DNase")) return "We now have mRNA — but the original DNA template is still in the mix. We need to destroy it because we only want to deliver mRNA (which is temporary) not DNA (which could integrate into chromosomes). DNase is an enzyme that chews up DNA but leaves RNA untouched.";
+        if (step.Name.Contains("Purify mRNA")) return "Clean-up time again. The mixture contains our mRNA plus leftover enzymes, unused building blocks, and DNA fragments. The spin column captures only the mRNA. From this point on, keep everything cold (on ice) — mRNA degrades quickly at room temperature.";
+        if (step.Name.Contains("QC Yield") || step.Name.Contains("QC:") && step.Name.Contains("Yield")) return "Quality control — checking that we made enough mRNA and it's pure. A260 measures RNA concentration. The 260/280 ratio tells us about purity: ~2.0 means pure RNA, lower means contamination with protein or chemicals.";
+        if (step.Name.Contains("QC Gel")) return "We run the mRNA on a gel (like a molecular race track) to check its size. Electrical current pushes the mRNA through a gel matrix — smaller molecules run faster. We compare our mRNA band position to a known size ladder. One clean band at the right size = good. Smearing = degraded. Multiple bands = something went wrong.";
+        if (step.Name.Contains("Combine")) return "Some therapies use multiple mRNAs (e.g., Oct4 + Sox2 + Klf4 for rejuvenation). We mix them in equal amounts so each cell receives balanced instructions.";
+        if (step.Name.Contains("LNP")) return "Naked mRNA would be destroyed by enzymes in your blood within seconds. We wrap it in lipid nanoparticles (LNPs) — tiny fat bubbles about 80 nanometers across (1000x smaller than a human hair). The two syringe pumps mix mRNA (in water) with lipids (in ethanol) through a tiny junction at a precise 3:1 ratio. The rapid mixing causes the lipids to spontaneously form bubbles around the mRNA.";
+        if (step.Name.Contains("Buffer Exchange")) return "The LNP mixture still contains ethanol from the lipid solution. We remove it by dialysis — placing the mixture in a bag with tiny pores, sitting in a large volume of clean buffer (PBS). The ethanol diffuses out through the pores while the LNPs are too big to escape. Like tea leaves in a tea bag, but in reverse.";
+        if (step.Name.Contains("QC: LNP") || step.Name.Contains("QC: Final")) return "Final quality check: how much mRNA actually made it inside the LNPs? We add a detergent (Triton X-100) to pop open the bubbles, then measure the mRNA that was inside. We compare this to the total mRNA we started with — ideally over 80% should be encapsulated.";
+        if (step.Name.Contains("Hydrogel")) return "For wound healing, we mix the LNPs into a gel that can be spread on the wound. The gel (hyaluronic acid) keeps the LNPs in contact with the wound bed and provides moisture for healing.";
+        if (step.Name.Contains("Microneedle")) return "For hair regrowth, we load the LNPs into dissolving microneedle patches — tiny needles (0.6mm long) that painlessly penetrate the scalp to deliver mRNA directly to the hair follicle stem cells.";
+        if (step.Name.Contains("Nebulizer")) return "For cold treatment, we load the LNPs into a nebulizer that turns the liquid into a fine mist you breathe in, delivering the mRNA directly to your airways where the virus lives.";
+        if (step.Name.Contains("Storage")) return "mRNA is fragile — it needs to be stored at -80°C to prevent degradation. At this temperature, it's stable for 6+ months. Always use single-use portions — each freeze-thaw cycle damages some of the mRNA.";
+        return step.Description;
+    }
+
+    static string GetPlainInstruction(IvtStep step)
+    {
+        if (step.Name.Contains("Template Prep")) return "Take the plasmid tube (tiny tube from Addgene, stored in your -20°C freezer). Thaw it by holding it in your hand for 1 minute. Add the restriction enzyme (comes with the kit — it's the one labeled with the enzyme name on the protocol). Mix gently by flicking the tube. Put it in the heat block. The app will set the temperature to 37°C automatically. Wait 1 hour.";
+        if (step.Name.Contains("Purify Template")) return "Take a spin column from the cleanup kit (small white tube with a filter inside). Add your reaction to the column. Put it in the centrifuge — the app will start it automatically at 8000 RPM for 5 minutes. The DNA sticks to the filter. Wash with the buffer from the kit (follow the kit instructions). Spin again. Add clean water to release the DNA into a new collection tube.";
+        if (step.Name.Contains("QC") && step.Name.Contains("Template")) return "Take 1-2 microliters (a tiny drop — use the smallest pipette) and put it in the spectrophotometer cuvette (the small glass square). The app will automatically take a UV measurement. Look at the numbers: you want at least 50 ng/µL concentration and a 260/280 ratio of 1.8 or higher.";
+        if (step.Name.Contains("IVT:")) return "This is the big one. In a fresh tube on ice, add: the 10x buffer (2µL), your template DNA (1µL), the NTP mix with modified uridine (replace the regular UTP), CleanCap reagent, T7 enzyme (1µL), and water to 20µL total. Follow the kit's exact volumes. Mix gently — DO NOT vortex (shaking destroys the enzyme). Put in the heat block at 37°C. The app starts the timer automatically. Do not open or disturb the tube for 2 hours.";
+        if (step.Name.Contains("DNase")) return "Open the tube carefully. Add 1µL of DNase I (in the kit). Close the tube and flick gently to mix. Put it back in the heat block at 37°C for 15 minutes. The timer starts automatically.";
+        if (step.Name.Contains("Purify mRNA")) return "Same as the template cleanup — but use the RNA cleanup kit (different columns, RNA-specific). Add your reaction to the column, spin in the centrifuge (auto-started), wash, spin again, elute with 50µL of RNase-free water into a clean tube. Keep the tube ON ICE from now on. mRNA degrades quickly at room temperature.";
+        if (step.Name.Contains("QC Yield") || step.Name.Contains("QC:") && step.Name.Contains("Yield")) return "Put a tiny drop in the spectrophotometer. The app measures automatically. Check: 260/280 ratio should be ~2.0 (pure RNA). Concentration should be 2000-3600 ng/µL. If it's too low, you can repeat the IVT step with more template.";
+        if (step.Name.Contains("QC Gel")) return "Prepare the gel: mix 1g agarose powder in 100mL TAE buffer, microwave until dissolved, add GelRed stain, pour into the gel box and insert the comb. Wait 20 min for it to solidify. Remove comb. Load 1µL of RNA ladder in the first well, then 1µL of your mRNA mixed with loading dye in the next well. The app starts the gel at 100V for 30 minutes. After it finishes, look at the gel under blue light — you should see one clean band.";
+        if (step.Name.Contains("Combine")) return "Using the concentrations from the spectrophotometer, calculate how much of each mRNA to mix so they're in equal amounts. For 3 mRNAs of different lengths, you need to account for molecular weight. The app notes explain the formula. Mix them in a tube on ice.";
+        if (step.Name.Contains("LNP")) return "Prepare two syringes: Syringe A = your mRNA mixed in citrate buffer (pH 4.0 — check with pH meter). Syringe B = lipids dissolved in ethanol. Load them into Pump A and Pump B. Connect both pumps to the T-junction mixer with tubing. Place a collection vial at the output. Click Next — the app starts both pumps automatically at 9 mL/min (A) and 3 mL/min (B) for the precise 3:1 ratio needed.";
+        if (step.Name.Contains("Buffer Exchange")) return "Take the collected LNP mixture and put it into a dialysis cassette (a flat pouch with a tiny-pore membrane). Place the cassette in a large beaker filled with 1 liter of PBS buffer (salt water at body-compatible pH). Wait 1 hour. Replace the PBS with fresh PBS. Wait another hour. The ethanol gradually leaks out through the membrane while the LNPs stay inside.";
+        if (step.Name.Contains("QC: LNP") || step.Name.Contains("QC: Final")) return "Take two small samples: (1) measure the total mRNA by adding detergent (Triton X-100 — it pops open the LNPs to release the mRNA inside), then measure with spectrophotometer. (2) measure without detergent (this measures any mRNA that DIDN'T get encapsulated). Encapsulation efficiency = (total - free) / total × 100%. You want over 80%.";
+        if (step.Name.Contains("Hydrogel")) return "In a clean container, mix equal volumes of your LNP solution and 2% hyaluronic acid gel. Stir gently with a spatula — DO NOT shake or vortex (the shaking forces would destroy the delicate LNP bubbles). The result should be a smooth, spreadable gel. Store at 2-8°C (fridge), use within 24 hours.";
+        if (step.Name.Contains("Microneedle")) return "Concentrate the LNPs by spinning through a centrifuge filter (the 100kDa Amicon Ultra — it lets water through but keeps the LNPs). Pour the concentrated LNPs into the microneedle mold (PVP/PVA polymer). Let it dry in a sealed container with desiccant (moisture absorber) at room temperature for 24 hours. Store finished patches at -20°C.";
+        if (step.Name.Contains("Nebulizer")) return "Transfer the LNP solution into the nebulizer reservoir (the small cup on the device). Use a vibrating mesh nebulizer ONLY — jet nebulizers use high-pressure air that destroys the LNP bubbles. Store ready-to-use solution at 2-8°C, use within 4 hours.";
+        if (step.Name.Contains("Storage")) return "Divide your finished product into small single-use portions (aliquots). Label each tube with: date, therapy name, concentration, and volume. Place in a box in the -80°C freezer. When you need one, take out a single tube and let it thaw at room temperature for 15 minutes. NEVER refreeze a thawed tube — the freeze-thaw cycle damages the LNPs.";
+        return step.Description;
+    }
+
+    private void ToggleAllergen(string name, bool add)
+    {
+        if (add && !_allergens.Contains(name)) _allergens.Add(name);
+        else _allergens.Remove(name);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        StopTimer();
+        LabClient.OnStatusChanged -= () => InvokeAsync(StateHasChanged);
+        await LabClient.DisconnectAsync();
+        await EnvClient.DisconnectAsync();
+        await QcClient.DisconnectAsync();
+    }
+}

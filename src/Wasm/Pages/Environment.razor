@@ -1,0 +1,144 @@
+@page "/environment"
+@implements IAsyncDisposable
+@inject EnvWsClient Env
+
+<PageTitle>Environment & Safety</PageTitle>
+
+<div class="lab">
+    <h2>Environment & Safety (ESP32 #3)</h2>
+
+    <div class="connection">
+        <label>WSS: <input type="text" @bind="_wssUrl" placeholder="wss://192.168.1.101:9124" /></label>
+        <button class="btn-primary" @onclick="Connect">@(Env.Connected ? "Reconnect" : "Connect")</button>
+        <span class="conn-status @(Env.Connected ? "connected" : "disconnected")">@(Env.Connected ? "Live" : "Disconnected")</span>
+    </div>
+
+    <div class="equipment-grid">
+        <!-- Room Conditions -->
+        <div class="equip-card">
+            <h3>Room Environment</h3>
+            <div class="equip-status">
+                <div>Temperature: @S.Room.TempC.ToString("F1")°C</div>
+                <div>Humidity: @S.Room.Humidity.ToString("F0")%</div>
+            </div>
+        </div>
+
+        <!-- Freezer -->
+        <div class="equip-card @(S.Freezer.Alarm ? "alarm" : "")">
+            <h3>-80°C Freezer</h3>
+            <div class="equip-status">
+                <div class="temp-current">@S.Freezer.TempC.ToString("F1")°C</div>
+                @if (S.Freezer.Alarm) { <div class="equip-indicator heating">ALARM: Too warm!</div> }
+                else { <div class="equip-indicator at-target">Normal</div> }
+            </div>
+        </div>
+
+        <!-- Fridge -->
+        <div class="equip-card @(S.Fridge.Alarm ? "alarm" : "")">
+            <h3>2-8°C Fridge</h3>
+            <div class="equip-status">
+                <div class="temp-current">@S.Fridge.TempC.ToString("F1")°C</div>
+                @if (S.Fridge.Alarm) { <div class="equip-indicator heating">ALARM: Out of range!</div> }
+                else { <div class="equip-indicator at-target">Normal</div> }
+            </div>
+        </div>
+
+        <!-- pH Meter -->
+        <div class="equip-card">
+            <h3>pH Meter</h3>
+            <div class="equip-status">
+                <div class="temp-current" style="color: @(S.Ph.Value is >= 3.8 and <= 4.2 ? "var(--green)" : S.Ph.Ready ? "var(--red)" : "var(--text)")">
+                    pH @S.Ph.Value.ToString("F2")
+                </div>
+                <div>Solution temp: @S.Ph.TempC.ToString("F1")°C</div>
+                @if (S.Ph.Ready && S.Ph.Value is >= 3.8 and <= 4.2)
+                { <div class="equip-indicator at-target">pH 4.0 buffer — READY for LNP</div> }
+            </div>
+            <div class="equip-controls">
+                <button class="btn-primary" @onclick="() => Cmd(20)">Measure pH</button>
+            </div>
+        </div>
+
+        <!-- Magnetic Stirrer -->
+        <div class="equip-card">
+            <h3>Magnetic Stirrer</h3>
+            <div class="equip-status">
+                <div>RPM: @S.Stirrer.Rpm / @S.Stirrer.TargetRpm</div>
+                <div class="equip-indicator @(S.Stirrer.Running ? "running" : "off")">@(S.Stirrer.Running ? "Stirring" : "Off")</div>
+            </div>
+            <div class="equip-controls">
+                <label>RPM: <input type="number" step="100" @bind="_stirrerRpm" /></label>
+                <button class="btn-primary" @onclick="() => Cmd(21, _stirrerRpm)">Start</button>
+                <button class="btn-secondary" @onclick="() => Cmd(22)">Stop</button>
+            </div>
+        </div>
+
+        <!-- Vortex Mixer -->
+        <div class="equip-card">
+            <h3>Vortex Mixer</h3>
+            <div class="equip-status">
+                <div>Speed: @S.Vortex.Speed%</div>
+                <div class="equip-indicator @(S.Vortex.Running ? "running" : "off")">@(S.Vortex.Running ? "Vortexing" : "Off")</div>
+            </div>
+            <div class="equip-controls">
+                <label>Speed %: <input type="number" min="0" max="100" @bind="_vortexSpeed" /></label>
+                <button class="btn-primary" @onclick="() => Cmd(23, _vortexSpeed)">Start</button>
+                <button class="btn-secondary" @onclick="() => Cmd(24)">Stop</button>
+            </div>
+        </div>
+
+        <!-- UV-C Sterilizer -->
+        <div class="equip-card">
+            <h3>UV-C Sterilizer</h3>
+            <div class="equip-status">
+                <div class="equip-indicator @(S.Uvc.On ? "running" : "off")">@(S.Uvc.On ? $"ON — {S.Uvc.RemainingMin} min left" : "Off")</div>
+            </div>
+            <div class="equip-controls">
+                <label>Minutes: <input type="number" min="1" max="30" @bind="_uvcMin" /></label>
+                <button class="btn-primary" @onclick="() => Cmd(25, _uvcMin)">Start</button>
+                <button class="btn-secondary" @onclick="() => Cmd(26)">Stop</button>
+            </div>
+        </div>
+
+        <!-- Fume Hood -->
+        <div class="equip-card">
+            <h3>Fume Hood</h3>
+            <div class="equip-status">
+                <div class="equip-indicator @(S.FumeHood.On ? "running" : "off")">@(S.FumeHood.On ? "Running" : "Off")</div>
+                <div>Airflow: @S.FumeHood.Airflow.ToString("F0")%</div>
+            </div>
+            <div class="equip-controls">
+                <button class="btn-primary" @onclick="() => Cmd(27)">On</button>
+                <button class="btn-secondary" @onclick="() => Cmd(28)">Off</button>
+            </div>
+        </div>
+
+        <!-- Safety -->
+        <div class="equip-card @(S.Safety.Estop || S.Safety.GasAlarm ? "alarm" : "")">
+            <h3>Safety Systems</h3>
+            <div class="equip-status">
+                <div>E-Stop: <strong style="color:@(S.Safety.Estop ? "var(--red)" : "var(--green)")">@(S.Safety.Estop ? "TRIGGERED" : "Clear")</strong></div>
+                <div>Door: @(S.Safety.DoorOpen ? "OPEN" : "Closed")</div>
+                <div>Gas/VOC: @S.Safety.GasLevel.ToString("F0") @(S.Safety.GasAlarm ? "⚠ ALARM" : "")</div>
+            </div>
+            @if (S.Safety.Estop)
+            {
+                <button class="btn-primary" @onclick="() => Cmd(29)">Reset E-Stop</button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _wssUrl = "wss://0.0.0.0:9124";
+    private int _stirrerRpm = 500;
+    private int _vortexSpeed = 50;
+    private int _uvcMin = 15;
+
+    private EnvironmentStatus S => Env.Status;
+
+    protected override void OnInitialized() => Env.OnStatusChanged += () => InvokeAsync(StateHasChanged);
+    private async Task Connect() => await Env.ConnectAsync(_wssUrl);
+    private Task Cmd(int cmd, double val = 0) => Env.SendCommandAsync(cmd, val);
+    public async ValueTask DisposeAsync() { Env.OnStatusChanged -= () => InvokeAsync(StateHasChanged); await Env.DisposeAsync(); }
+}

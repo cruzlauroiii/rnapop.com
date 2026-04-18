@@ -1,0 +1,352 @@
+@page "/lab/dashboard"
+@implements IAsyncDisposable
+@inject LabWsClient LabClient
+@inject EnvWsClient EnvClient
+@inject QcWsClient QcClient
+
+<PageTitle>Lab Control - RNA Therapy Platform</PageTitle>
+
+<div class="lab">
+    <h2>Lab Dashboard</h2>
+
+    <div class="connection">
+        <label>
+            WSS:
+            <input type="text" @bind="_wssUrl" placeholder="wss://0.0.0.0:9983" />
+        </label>
+        <button class="btn-primary" @onclick="ConnectAll" disabled="@_connecting">
+            @(_connecting ? "Connecting..." : LabClient.Connected ? "Reconnect" : "Connect")
+        </button>
+        <button class="btn-secondary" @onclick="DisconnectAll" disabled="@(!LabClient.Connected)">Disconnect</button>
+        <span class="conn-status @(LabClient.Connected ? "connected" : "disconnected")">
+            @(LabClient.Connected ? "Live" : "Disconnected")
+        </span>
+        @if (LabClient.Error is not null)
+        {
+            <span class="conn-error">@LabClient.Error</span>
+        }
+    </div>
+
+    <!-- ===== ESP32 #1 — Controller ===== -->
+    <h3 style="margin-top:1.5rem; color:var(--accent);">ESP32 #1 — Controller</h3>
+    <div class="equipment-grid">
+        <!-- Heat Block -->
+        <div class="equip-card">
+            <h3>Heat Block</h3>
+            <div class="equip-status">
+                <div class="temp-display">
+                    <span class="temp-current">@L.HeatBlock.CurrentTemp.ToString("F1")°C</span>
+                    <span class="temp-target">Target: @L.HeatBlock.TargetTemp.ToString("F1")°C</span>
+                </div>
+                <div class="equip-indicator @(L.HeatBlock.AtTarget ? "at-target" : L.HeatBlock.HeaterOn ? "heating" : "off")">
+                    @(L.HeatBlock.AtTarget ? "At Target" : L.HeatBlock.HeaterOn ? "Heating..." : "Off")
+                </div>
+            </div>
+            <div class="equip-controls">
+                <label>Target °C: <input type="number" step="0.5" min="20" max="100" @bind="_heatTarget" /></label>
+                <button @onclick="() => Cmd(LabCommand.HeatBlockSetTemp, value: _heatTarget)">Set</button>
+                <button class="btn-primary" @onclick="() => Cmd(LabCommand.HeatBlockStart)">Start</button>
+                <button class="btn-secondary" @onclick="() => Cmd(LabCommand.HeatBlockStop)">Stop</button>
+            </div>
+            <div class="pid-config"><small>PID: Kp=@L.HeatBlock.PidKp Ki=@L.HeatBlock.PidKi Kd=@L.HeatBlock.PidKd</small></div>
+        </div>
+
+        <!-- Syringe Pumps -->
+        @for (int i = 0; i < 2; i++)
+        {
+            var idx = i;
+            var pump = L.SyringePumps[idx];
+            <div class="equip-card">
+                <h3>Syringe Pump @(idx == 0 ? "A (mRNA/Aqueous)" : "B (Lipid/Ethanol)")</h3>
+                <div class="equip-status">
+                    <div>Flow: @pump.FlowRateMlMin.ToString("F2") mL/min</div>
+                    <div>Dispensed: @pump.DispensedMl.ToString("F2") / @pump.VolumeMl.ToString("F1") mL</div>
+                    <div class="equip-indicator @(pump.Running ? "running" : "off")">@(pump.Running ? "Running" : "Stopped")</div>
+                </div>
+                <div class="equip-controls">
+                    <label>Flow (mL/min): <input type="number" step="0.1" @bind="_pumpFlows[idx]" /></label>
+                    <label>Volume (mL): <input type="number" step="0.5" @bind="_pumpVolumes[idx]" /></label>
+                    <button class="btn-primary" @onclick="() => Cmd(LabCommand.PumpSetFlow, idx, _pumpFlows[idx], _pumpVolumes[idx])">Start</button>
+                    <button class="btn-secondary" @onclick="() => Cmd(LabCommand.PumpStop, idx)">Stop</button>
+                </div>
+            </div>
+        }
+
+        <!-- Spectrophotometer -->
+        <div class="equip-card">
+            <h3>UV Spectrophotometer</h3>
+            <div class="equip-status">
+                <div>A260: @L.Spectrophotometer.A260.ToString("F3")</div>
+                <div>A280: @L.Spectrophotometer.A280.ToString("F3")</div>
+                <div>260/280: @L.Spectrophotometer.Ratio260280.ToString("F2") @(L.Spectrophotometer.Ratio260280 is >= 1.9 and <= 2.1 ? "(Pure RNA)" : "")</div>
+                <div>Concentration: @L.Spectrophotometer.ConcentrationNgUl.ToString("F1") ng/uL</div>
+            </div>
+            <div class="equip-controls">
+                <button class="btn-primary" @onclick="() => Cmd(LabCommand.SpectrometerMeasure)">Measure</button>
+            </div>
+        </div>
+
+        <!-- Centrifuge -->
+        <div class="equip-card">
+            <h3>Centrifuge</h3>
+            <div class="equip-status">
+                <div>RPM: @L.Centrifuge.CurrentRpm / @L.Centrifuge.TargetRpm</div>
+                <div>Remaining: @(L.Centrifuge.RemainingSeconds / 60)m @(L.Centrifuge.RemainingSeconds % 60)s</div>
+                <div class="equip-indicator @(L.Centrifuge.Running ? "running" : "off")">@(L.Centrifuge.Running ? "Spinning" : "Stopped")</div>
+            </div>
+            <div class="equip-controls">
+                <label>RPM: <input type="number" step="500" @bind="_centrifugeRpm" /></label>
+                <label>Duration (min): <input type="number" step="1" @bind="_centrifugeMin" /></label>
+                <button class="btn-primary" @onclick="() => Cmd(LabCommand.CentrifugeStart, value: _centrifugeRpm, value2: _centrifugeMin * 60)">Start</button>
+                <button class="btn-secondary" @onclick="() => Cmd(LabCommand.CentrifugeStop)">Stop</button>
+            </div>
+        </div>
+
+        <!-- Gel Electrophoresis -->
+        <div class="equip-card">
+            <h3>Gel Electrophoresis</h3>
+            <div class="equip-status">
+                <div>Voltage: @L.Gel.Voltage V | Current: @L.Gel.CurrentMa mA</div>
+                <div>Remaining: @L.Gel.RemainingMinutes min</div>
+                <div class="equip-indicator @(L.Gel.Running ? "running" : "off")">@(L.Gel.Running ? "Running" : "Off")</div>
+            </div>
+            <div class="equip-controls">
+                <label>Voltage: <input type="number" step="10" @bind="_gelVoltage" /></label>
+                <label>Duration (min): <input type="number" step="5" @bind="_gelMinutes" /></label>
+                <button class="btn-primary" @onclick="() => Cmd(LabCommand.GelStart, value: _gelVoltage, value2: _gelMinutes)">Start</button>
+                <button class="btn-secondary" @onclick="() => Cmd(LabCommand.GelStop)">Stop</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== ESP32 #3 — Environment & Safety ===== -->
+    <h3 style="margin-top:1.5rem; color:var(--accent);">ESP32 #3 — Environment & Safety</h3>
+    <div class="equipment-grid">
+        <div class="equip-card">
+            <h3>Room Environment</h3>
+            <div class="equip-status">
+                <div>Temperature: @E.Room.TempC.ToString("F1")°C</div>
+                <div>Humidity: @E.Room.Humidity.ToString("F0")%</div>
+            </div>
+        </div>
+
+        <div class="equip-card @(E.Freezer.Alarm ? "alarm" : "")">
+            <h3>-80°C Freezer</h3>
+            <div class="equip-status">
+                <div class="temp-current">@E.Freezer.TempC.ToString("F1")°C</div>
+                <div class="equip-indicator @(E.Freezer.Alarm ? "heating" : "at-target")">@(E.Freezer.Alarm ? "ALARM" : "Normal")</div>
+            </div>
+        </div>
+
+        <div class="equip-card @(E.Fridge.Alarm ? "alarm" : "")">
+            <h3>2-8°C Fridge</h3>
+            <div class="equip-status">
+                <div class="temp-current">@E.Fridge.TempC.ToString("F1")°C</div>
+                <div class="equip-indicator @(E.Fridge.Alarm ? "heating" : "at-target")">@(E.Fridge.Alarm ? "ALARM" : "Normal")</div>
+            </div>
+        </div>
+
+        <div class="equip-card">
+            <h3>pH Meter</h3>
+            <div class="equip-status">
+                <div class="temp-current" style="color: @(E.Ph.Value is >= 3.8 and <= 4.2 ? "var(--green)" : E.Ph.Ready ? "var(--red)" : "var(--text)")">pH @E.Ph.Value.ToString("F2")</div>
+                <div>Solution temp: @E.Ph.TempC.ToString("F1")°C</div>
+                @if (E.Ph.Ready && E.Ph.Value is >= 3.8 and <= 4.2)
+                { <div class="equip-indicator at-target">pH 4.0 — READY for LNP</div> }
+            </div>
+            <div class="equip-controls">
+                <button class="btn-primary" @onclick="() => EnvCmd(20)">Measure pH</button>
+            </div>
+        </div>
+
+        <div class="equip-card">
+            <h3>Magnetic Stirrer</h3>
+            <div class="equip-status">
+                <div>RPM: @E.Stirrer.Rpm / @E.Stirrer.TargetRpm</div>
+                <div class="equip-indicator @(E.Stirrer.Running ? "running" : "off")">@(E.Stirrer.Running ? "Stirring" : "Off")</div>
+            </div>
+            <div class="equip-controls">
+                <label>RPM: <input type="number" step="100" @bind="_stirrerRpm" /></label>
+                <button class="btn-primary" @onclick="() => EnvCmd(21, _stirrerRpm)">Start</button>
+                <button class="btn-secondary" @onclick="() => EnvCmd(22)">Stop</button>
+            </div>
+        </div>
+
+        <div class="equip-card">
+            <h3>Vortex Mixer</h3>
+            <div class="equip-status">
+                <div>Speed: @E.Vortex.Speed%</div>
+                <div class="equip-indicator @(E.Vortex.Running ? "running" : "off")">@(E.Vortex.Running ? "Vortexing" : "Off")</div>
+            </div>
+            <div class="equip-controls">
+                <label>Speed %: <input type="number" min="0" max="100" @bind="_vortexSpeed" /></label>
+                <button class="btn-primary" @onclick="() => EnvCmd(23, _vortexSpeed)">Start</button>
+                <button class="btn-secondary" @onclick="() => EnvCmd(24)">Stop</button>
+            </div>
+        </div>
+
+        <div class="equip-card">
+            <h3>UV-C Sterilizer</h3>
+            <div class="equip-status">
+                <div class="equip-indicator @(E.Uvc.On ? "running" : "off")">@(E.Uvc.On ? $"ON — {E.Uvc.RemainingMin} min left" : "Off")</div>
+            </div>
+            <div class="equip-controls">
+                <label>Minutes: <input type="number" min="1" max="30" @bind="_uvcMin" /></label>
+                <button class="btn-primary" @onclick="() => EnvCmd(25, _uvcMin)">Start</button>
+                <button class="btn-secondary" @onclick="() => EnvCmd(26)">Stop</button>
+            </div>
+        </div>
+
+        <div class="equip-card">
+            <h3>Fume Hood</h3>
+            <div class="equip-status">
+                <div class="equip-indicator @(E.FumeHood.On ? "running" : "off")">@(E.FumeHood.On ? "Running" : "Off")</div>
+                <div>Airflow: @E.FumeHood.Airflow.ToString("F0")%</div>
+            </div>
+            <div class="equip-controls">
+                <button class="btn-primary" @onclick="() => EnvCmd(27)">On</button>
+                <button class="btn-secondary" @onclick="() => EnvCmd(28)">Off</button>
+            </div>
+        </div>
+
+        <div class="equip-card @(E.Safety.Estop || E.Safety.GasAlarm ? "alarm" : "")">
+            <h3>Safety Systems</h3>
+            <div class="equip-status">
+                <div>E-Stop: <strong style="color:@(E.Safety.Estop ? "var(--red)" : "var(--green)")">@(E.Safety.Estop ? "TRIGGERED" : "Clear")</strong></div>
+                <div>Door: @(E.Safety.DoorOpen ? "OPEN" : "Closed")</div>
+                <div>Gas/VOC: @E.Safety.GasLevel.ToString("F0") @(E.Safety.GasAlarm ? "ALARM" : "")</div>
+            </div>
+            @if (E.Safety.Estop)
+            { <button class="btn-primary" @onclick="() => EnvCmd(29)">Reset E-Stop</button> }
+        </div>
+    </div>
+
+    <!-- ===== ESP32 #4 — QC & Imaging ===== -->
+    <h3 style="margin-top:1.5rem; color:var(--accent);">ESP32 #4 — QC & Imaging</h3>
+    <div class="equipment-grid">
+        <div class="equip-card" style="grid-column: span 2;">
+            <h3>Gel Imager</h3>
+            <div class="equip-status">
+                <div>Transilluminator: @(Q.GelImager.TransilluminatorOn ? $"ON ({Q.GelImager.Brightness}/255)" : "Off")</div>
+                <div>Orange Filter: @(Q.GelImager.FilterEngaged ? "Engaged" : "Open")</div>
+            </div>
+            <div class="equip-controls">
+                <button class="btn-primary" @onclick="() => QcCmd(31)">Light On</button>
+                <button class="btn-secondary" @onclick="() => QcCmd(32)">Light Off</button>
+                <label>Brightness: <input type="number" min="0" max="255" @bind="_brightness" /></label>
+                <button @onclick="() => QcCmd(33, _brightness)">Set</button>
+                <button @onclick="() => QcCmd(34)">Filter In</button>
+                <button @onclick="() => QcCmd(35)">Filter Out</button>
+                <button class="btn-primary calculate" @onclick="() => QcCmd(30)">Capture Image</button>
+            </div>
+        </div>
+
+        <div class="equip-card">
+            <h3>DLS Particle Sizer (LNP Size)</h3>
+            <div class="equip-status">
+                @if (Q.Dls.Running)
+                { <div class="equip-indicator running">Measuring... (5 sec)</div> }
+                else if (Q.Dls.Ready)
+                {
+                    <div class="temp-current" style="color: @(Q.Dls.SizeOk ? "var(--green)" : "var(--red)")">@Q.Dls.ParticleSizeNm.ToString("F1") nm</div>
+                    <div>PDI: @Q.Dls.Pdi.ToString("F3") @(Q.Dls.Pdi < 0.2 ? "(uniform)" : Q.Dls.Pdi < 0.4 ? "(moderate)" : "(polydisperse)")</div>
+                    <div class="equip-indicator @(Q.Dls.SizeOk ? "at-target" : "heating")">@(Q.Dls.SizeOk ? "60-100nm OPTIMAL" : Q.Dls.ParticleSizeNm < 60 ? "Too small" : "Too large")</div>
+                }
+                else { <div class="equip-indicator off">No measurement</div> }
+            </div>
+            <div class="equip-controls">
+                <button class="btn-primary" @onclick="() => QcCmd(36)">Measure LNP Size</button>
+            </div>
+        </div>
+
+        <div class="equip-card">
+            <h3>Turbidity / OD Sensor</h3>
+            <div class="equip-status">
+                @if (Q.Turbidity.Ready)
+                {
+                    <div>OD: @Q.Turbidity.Od.ToString("F3")</div>
+                    <div>Transmission: @Q.Turbidity.Transmission.ToString("F1")%</div>
+                }
+                else { <div class="equip-indicator off">No measurement</div> }
+            </div>
+            <div class="equip-controls">
+                <button class="btn-primary" @onclick="() => QcCmd(37)">Measure</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _wssUrl = "wss://0.0.0.0:9983";
+    private bool _connecting;
+
+    // ESP32 #1 controls
+    private double _heatTarget = 37;
+    private double[] _pumpFlows = [9.0, 3.0];
+    private double[] _pumpVolumes = [3.0, 1.0];
+    private int _centrifugeRpm = 8000;
+    private int _centrifugeMin = 5;
+    private double _gelVoltage = 100;
+    private int _gelMinutes = 30;
+
+    // ESP32 #3 controls
+    private int _stirrerRpm = 500;
+    private int _vortexSpeed = 50;
+    private int _uvcMin = 15;
+
+    // ESP32 #4 controls
+    private int _brightness = 200;
+
+    // Shorthand accessors
+    private LabStatus L => LabClient.Status;
+    private EnvironmentStatus E => EnvClient.Status;
+    private QcStatus Q => QcClient.Status;
+
+    protected override void OnInitialized()
+    {
+        LabClient.OnStatusChanged += Refresh;
+        EnvClient.OnStatusChanged += Refresh;
+        QcClient.OnStatusChanged += Refresh;
+    }
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
+
+    private async Task ConnectAll()
+    {
+        _connecting = true;
+        StateHasChanged();
+        // All 3 clients connect to the same mock server (or separate ESP32s in production)
+        await Task.WhenAll(
+            LabClient.ConnectAsync(_wssUrl),
+            EnvClient.ConnectAsync(_wssUrl),
+            QcClient.ConnectAsync(_wssUrl)
+        );
+        _connecting = false;
+    }
+
+    private async Task DisconnectAll()
+    {
+        await Task.WhenAll(
+            LabClient.DisconnectAsync(),
+            EnvClient.DisconnectAsync(),
+            QcClient.DisconnectAsync()
+        );
+    }
+
+    private Task Cmd(LabCommand cmd, int deviceIndex = 0, double value = 0, double value2 = 0) =>
+        LabClient.SendCommandAsync(cmd, deviceIndex, value, value2);
+
+    private Task EnvCmd(int cmd, double val = 0) =>
+        EnvClient.SendCommandAsync(cmd, val);
+
+    private Task QcCmd(int cmd, int val = 0) =>
+        QcClient.SendCommandAsync(cmd, val);
+
+    public async ValueTask DisposeAsync()
+    {
+        LabClient.OnStatusChanged -= Refresh;
+        EnvClient.OnStatusChanged -= Refresh;
+        QcClient.OnStatusChanged -= Refresh;
+        await DisconnectAll();
+    }
+}

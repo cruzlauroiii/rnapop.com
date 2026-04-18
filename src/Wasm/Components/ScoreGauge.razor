@@ -1,0 +1,34 @@
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public double Score { get; set; }
+    [Parameter] public bool HasData { get; set; } = true;
+
+    private string Color => Score switch
+    {
+        >= 80 => "#22c55e",
+        >= 60 => "#84cc16",
+        >= 40 => "#eab308",
+        >= 20 => "#f97316",
+        _ => "#ef4444",
+    };
+
+    private double Percentage => Math.Clamp(Score, 0, 100);
+}
+
+<div class="gauge @(HasData ? "" : "no-data")">
+    <div class="gauge-label">@Label</div>
+    @if (HasData)
+    {
+        <div class="gauge-bar-bg">
+            <div class="gauge-bar-fill" style="width: @(Percentage)%; background: @Color;"></div>
+        </div>
+        <div class="gauge-value" style="color: @Color;">@Score.ToString("F0")<span class="gauge-max">/100</span></div>
+    }
+    else
+    {
+        <div class="gauge-bar-bg">
+            <div class="gauge-bar-fill" style="width: 0%;"></div>
+        </div>
+        <div class="gauge-value no-data-text">N/A</div>
+    }
+</div>

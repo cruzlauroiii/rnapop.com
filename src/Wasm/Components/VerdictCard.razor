@@ -1,0 +1,88 @@
+@code {
+    [Parameter] public ScoringResult Result { get; set; } = null!;
+    [Parameter] public EventCallback OnReset { get; set; }
+}
+
+<div class="verdict-card @(Result.Verdict == Verdict.Pass ? "pass" : "fail")">
+    <div class="verdict-header">
+        <div class="verdict-icon">@(Result.Verdict == Verdict.Pass ? "PASS" : "FAIL")</div>
+        <div class="verdict-score">
+            <span class="big-score">@Result.CompositeScore.ToString("F0")</span>
+            <span class="score-label">/100</span>
+        </div>
+    </div>
+
+    <div class="age-comparison">
+        <div class="age-box">
+            <span class="age-label">Chronological</span>
+            <span class="age-value">@Result.ChronologicalAge</span>
+        </div>
+        <div class="age-arrow">@(Result.AgeDelta < 0 ? "<" : ">")</div>
+        <div class="age-box bio @(Result.AgeDelta < 0 ? "younger" : "older")">
+            <span class="age-label">Biological (PhenoAge)</span>
+            <span class="age-value">@Result.BiologicalAge.ToString("F1")</span>
+        </div>
+        <div class="age-delta @(Result.AgeDelta < 0 ? "good" : "bad")">
+            @(Result.AgeDelta > 0 ? "+" : "")@Result.AgeDelta.ToString("F1") years
+        </div>
+    </div>
+
+    <div class="verdict-reason">@Result.VerdictReason</div>
+
+    <h3>Pillar Breakdown</h3>
+    <div class="pillars">
+        @foreach (var p in Result.Pillars)
+        {
+            <div class="pillar">
+                <ScoreGauge Label="@p.Name" Score="@p.Score" HasData="@p.HasData" />
+                <div class="pillar-desc">@p.Description</div>
+                <div class="pillar-weight">Weight: @((p.EffectiveWeight * 100).ToString("F0"))%</div>
+                @if (p.Flags.Length > 0)
+                {
+                    <ul class="pillar-flags">
+                        @foreach (var f in p.Flags)
+                        {
+                            <li>@f</li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+
+    <h3>Rejuvenation Protocol Eligibility</h3>
+    <div class="protocols">
+        @foreach (var proto in Result.Protocols)
+        {
+            <div class="protocol @proto.Eligibility.ToString().ToLower()">
+                <div class="proto-header">
+                    <strong>@proto.Name</strong>
+                    <span class="proto-badge">@proto.Eligibility</span>
+                </div>
+                <div class="proto-desc">@proto.Description</div>
+                @if (proto.Blockers.Length > 0)
+                {
+                    <ul class="proto-blockers">
+                        @foreach (var b in proto.Blockers)
+                        {
+                            <li>@b</li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+
+    @if (Result.Recommendations.Length > 0)
+    {
+        <h3>Recommendations</h3>
+        <ul class="recommendations">
+            @foreach (var r in Result.Recommendations)
+            {
+                <li>@r</li>
+            }
+        </ul>
+    }
+
+    <button class="btn-secondary" @onclick="OnReset">New Assessment</button>
+</div>

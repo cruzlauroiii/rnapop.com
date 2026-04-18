@@ -1,0 +1,117 @@
+@page "/therapy"
+@page "/therapy/{TherapyId?}"
+
+<PageTitle>RNA Therapies - RNA Therapy Platform</PageTitle>
+
+<div class="therapies">
+    <h2>RNA Therapy Catalog</h2>
+    <p>Select a therapy to view details, required inputs, and mRNA constructs for synthesis.</p>
+
+    <div class="category-filter">
+        <button class="@(_filter == null ? "active" : "")" @onclick="() => _filter = null">All</button>
+        @foreach (var cat in _categories)
+        {
+            <button class="@(_filter == cat ? "active" : "")" @onclick="() => _filter = cat">@cat</button>
+        }
+    </div>
+
+    <div class="therapy-grid">
+        @foreach (var t in Filtered)
+        {
+            <div class="therapy-card @(t.Id == _selected?.Id ? "selected" : "")">
+                <div class="therapy-header" @onclick="() => _selected = _selected?.Id == t.Id ? null : t">
+                    <span class="therapy-category">@t.Category</span>
+                    <h3>@t.Name</h3>
+                    <span class="therapy-status status-@StatusClass(t.Status)">@t.Status</span>
+                </div>
+
+                @if (_selected?.Id == t.Id)
+                {
+                    <div class="therapy-detail">
+                        <p>@t.Description</p>
+
+                        <h4>Mechanism</h4>
+                        <p class="mechanism">@t.Mechanism</p>
+
+                        <h4>mRNA Constructs</h4>
+                        <table class="construct-table">
+                            <thead>
+                                <tr><th>Name</th><th>Gene</th><th>Length</th><th>Function</th><th>Source</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var c in t.Constructs)
+                                {
+                                    <tr>
+                                        <td>@c.Name</td>
+                                        <td><code>@c.Gene</code></td>
+                                        <td>@c.LengthNt nt</td>
+                                        <td>@c.Function</td>
+                                        <td>@c.Source</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+
+                        <h4>LNP Formulation</h4>
+                        <p>@t.LnpFormulation</p>
+
+                        <h4>Dosing</h4>
+                        <p>@t.DosingNotes</p>
+
+                        <h4>Required Inputs</h4>
+                        <ul>
+                            @foreach (var r in t.RequiredInputs)
+                            {
+                                <li>@r</li>
+                            }
+                        </ul>
+
+                        <h4>References</h4>
+                        <ul>
+                            @foreach (var r in t.References)
+                            {
+                                <li>@r</li>
+                            }
+                        </ul>
+
+                        <div class="therapy-actions">
+                            <a href="therapy/@t.Id/assess" class="btn-primary">Assess & Dose</a>
+                            @if (t.Id == "rejuvenation")
+                            {
+                                <a href="assess/biological-age" class="btn-secondary">Full 6-Pillar Assessment</a>
+                            }
+                            <a href="protocol/@t.Id" class="btn-secondary">IVT Protocol</a>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? TherapyId { get; set; }
+
+    private TherapyOption? _selected;
+    private string? _filter;
+
+    protected override void OnParametersSet()
+    {
+        if (TherapyId is not null)
+            _selected = TherapyCatalog.All.FirstOrDefault(t => t.Id == TherapyId);
+    }
+
+    private string[] _categories => TherapyCatalog.All.Select(t => t.Category).Distinct().Order().ToArray();
+
+    private TherapyOption[] Filtered => _filter is null
+        ? TherapyCatalog.All
+        : TherapyCatalog.All.Where(t => t.Category == _filter).ToArray();
+
+    private static string StatusClass(string status) => status switch
+    {
+        _ when status.Contains("Approved") => "approved",
+        _ when status.Contains("Clinical") => "clinical",
+        _ when status.Contains("Preclinical") => "preclinical",
+        _ => "research",
+    };
+}

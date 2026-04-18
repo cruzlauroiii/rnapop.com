@@ -1,0 +1,121 @@
+@page "/qc"
+@implements IAsyncDisposable
+@inject QcWsClient Qc
+
+<PageTitle>QC & Imaging</PageTitle>
+
+<div class="lab">
+    <h2>Quality Control & Imaging (ESP32 #4)</h2>
+
+    <div class="connection">
+        <label>WSS: <input type="text" @bind="_wssUrl" placeholder="wss://192.168.1.102:9125" /></label>
+        <button class="btn-primary" @onclick="Connect">@(Qc.Connected ? "Reconnect" : "Connect")</button>
+        <span class="conn-status @(Qc.Connected ? "connected" : "disconnected")">@(Qc.Connected ? "Live" : "Disconnected")</span>
+    </div>
+
+    <div class="equipment-grid">
+        <!-- Gel Imager -->
+        <div class="equip-card" style="grid-column: span 2;">
+            <h3>Gel Imager</h3>
+            <div class="equip-status">
+                <div>Transilluminator: @(S.GelImager.TransilluminatorOn ? $"ON ({S.GelImager.Brightness}/255)" : "Off")</div>
+                <div>Orange Filter: @(S.GelImager.FilterEngaged ? "Engaged" : "Open")</div>
+                @if (S.GelImager.ImageReady) { <div>Last image: @(S.GelImager.ImageSize / 1024) KB</div> }
+            </div>
+            <div class="equip-controls">
+                <button class="btn-primary" @onclick="() => Cmd(31)">Light On</button>
+                <button class="btn-secondary" @onclick="() => Cmd(32)">Light Off</button>
+                <label>Brightness: <input type="number" min="0" max="255" @bind="_brightness" /></label>
+                <button @onclick="() => Cmd(33, _brightness)">Set</button>
+                <button @onclick="() => Cmd(34)">Filter In</button>
+                <button @onclick="() => Cmd(35)">Filter Out</button>
+                <button class="btn-primary calculate" @onclick="() => Cmd(30)">Capture Image</button>
+            </div>
+            @if (_imageData is not null)
+            {
+                <div class="gel-image">
+                    <img src="data:image/jpeg;base64,@_imageBase64" alt="Gel image" style="max-width:100%; border-radius:var(--radius); margin-top:0.75rem;" />
+                </div>
+            }
+        </div>
+
+        <!-- DLS Particle Sizer -->
+        <div class="equip-card">
+            <h3>Dynamic Light Scattering (LNP Size)</h3>
+            <div class="equip-status">
+                @if (S.Dls.Running)
+                {
+                    <div class="equip-indicator running">Measuring... (5 sec)</div>
+                }
+                else if (S.Dls.Ready)
+                {
+                    <div class="temp-current" style="color: @(S.Dls.SizeOk ? "var(--green)" : "var(--red)")">
+                        @S.Dls.ParticleSizeNm.ToString("F1") nm
+                    </div>
+                    <div>PDI: @S.Dls.Pdi.ToString("F3") @(S.Dls.Pdi < 0.2 ? "(uniform)" : S.Dls.Pdi < 0.4 ? "(moderate)" : "(polydisperse)")</div>
+                    <div class="equip-indicator @(S.Dls.SizeOk ? "at-target" : "heating")">
+                        @(S.Dls.SizeOk ? "60-100nm — OPTIMAL for LNP" : S.Dls.ParticleSizeNm < 60 ? "Too small — increase lipid ratio" : "Too large — increase flow rate")
+                    </div>
+                }
+                else
+                {
+                    <div class="equip-indicator off">No measurement</div>
+                }
+            </div>
+            <div class="equip-controls">
+                <button class="btn-primary" @onclick="() => Cmd(36)" disabled="@S.Dls.Running">Measure LNP Size</button>
+            </div>
+        </div>
+
+        <!-- Turbidity -->
+        <div class="equip-card">
+            <h3>Turbidity / OD Sensor</h3>
+            <div class="equip-status">
+                @if (S.Turbidity.Ready)
+                {
+                    <div>OD: @S.Turbidity.Od.ToString("F3")</div>
+                    <div>Transmission: @S.Turbidity.Transmission.ToString("F1")%</div>
+                }
+                else
+                {
+                    <div class="equip-indicator off">No measurement</div>
+                }
+            </div>
+            <div class="equip-controls">
+                <button class="btn-primary" @onclick="() => Cmd(37)">Measure</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _wssUrl = "wss://0.0.0.0:9125";
+    private int _brightness = 200;
+    private byte[]? _imageData;
+    private string? _imageBase64;
+
+    private QcStatus S => Qc.Status;
+
+    protected override void OnInitialized()
+    {
+        Qc.OnStatusChanged += () => InvokeAsync(StateHasChanged);
+        Qc.OnImageReceived += OnImage;
+    }
+
+    private void OnImage(byte[] data)
+    {
+        _imageData = data;
+        _imageBase64 = Convert.ToBase64String(data);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task Connect() => await Qc.ConnectAsync(_wssUrl);
+    private Task Cmd(int cmd, int val = 0) => Qc.SendCommandAsync(cmd, val);
+
+    public async ValueTask DisposeAsync()
+    {
+        Qc.OnStatusChanged -= () => InvokeAsync(StateHasChanged);
+        Qc.OnImageReceived -= OnImage;
+        await Qc.DisposeAsync();
+    }
+}

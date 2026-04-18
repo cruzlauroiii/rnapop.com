@@ -1,0 +1,36 @@
+@inherits LayoutComponentBase
+@inject IJSRuntime JS
+
+<div class="app">
+    <header class="top-bar">
+        <h1>RNA Therapy Platform</h1>
+        <div class="theme-toggle">
+            <button class="@(_theme == "dark" ? "active" : "")" @onclick='() => SetTheme("dark")' title="Dark">D</button>
+            <button class="@(_theme == "light" ? "active" : "")" @onclick='() => SetTheme("light")' title="Light">L</button>
+            <button class="@(_theme == "auto" ? "active" : "")" @onclick='() => SetTheme("auto")' title="Auto">A</button>
+        </div>
+    </header>
+    <nav class="side-nav">
+        <NavLink href="guide" Match="NavLinkMatch.All">Guide</NavLink>
+        <NavLink href="therapy/common-cold">Therapies</NavLink>
+        <NavLink href="assess/biological-age">Assess</NavLink>
+        <NavLink href="build/hardware">Build</NavLink>
+        <NavLink href="lab/dashboard">Lab</NavLink>
+    </nav>
+    <main class="content">
+        @Body
+    </main>
+    <footer class="bottom-bar">
+        <span>100% client-side &mdash; no data leaves your browser</span>
+    </footer>
+</div>
+
+@code {
+    private string _theme = "dark";
+
+    private async Task SetTheme(string theme)
+    {
+        _theme = theme;
+        await JS.InvokeVoidAsync("eval", $"document.documentElement.setAttribute('data-theme','{theme}')");
+    }
+}

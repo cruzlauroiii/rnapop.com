@@ -1,0 +1,135 @@
+@page "/assess/biological-age"
+
+<PageTitle>Assessment - RNA Therapy Platform</PageTitle>
+
+<div class="assess">
+    <h2>Biomarker Assessment</h2>
+
+    @if (_result is not null)
+    {
+        <VerdictCard Result="_result" OnReset="Reset" />
+    }
+    else
+    {
+        @if (_errors.Count > 0)
+        {
+            <div class="validation-errors">
+                @foreach (var e in _errors)
+                {
+                    <div class="error">@e.Field: @e.Message</div>
+                }
+            </div>
+        }
+
+        <div class="wizard">
+            <div class="wizard-tabs">
+                @for (int i = 0; i < _tabs.Length; i++)
+                {
+                    var idx = i;
+                    <button class="@(_step == idx ? "active" : "")" @onclick="() => _step = idx">
+                        @_tabs[idx]
+                    </button>
+                }
+            </div>
+
+            <div class="wizard-body">
+                @switch (_step)
+                {
+                    case 0:
+                        <DemographicsPanel Demographics="_input.Demographics" />
+                        break;
+                    case 1:
+                        <BloodPanel Blood="_input.Blood" />
+                        break;
+                    case 2:
+                        <RnaPanel PiRna="_input.PiRna" MiRna="_input.MiRna" />
+                        break;
+                    case 3:
+                        <SenescencePanel Senescence="_input.Senescence" />
+                        break;
+                    case 4:
+                        <PathwayPanel Pathway="_input.Pathway" Telomere="_input.Telomere" />
+                        break;
+                }
+            </div>
+
+            <div class="wizard-nav">
+                @if (_step > 0)
+                {
+                    <button class="btn-secondary" @onclick="() => _step--">Back</button>
+                }
+                @if (_step < _tabs.Length - 1)
+                {
+                    <button class="btn-primary" @onclick="() => _step++">Next</button>
+                }
+                else
+                {
+                    <button class="btn-primary calculate" @onclick="Calculate">Calculate</button>
+                }
+            </div>
+        </div>
+
+        <div class="sample-data">
+            <button @onclick="LoadHealthyExample">Load Healthy Example</button>
+            <button @onclick="LoadUnhealthyExample">Load Unhealthy Example</button>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly string[] _tabs = ["Demographics", "Blood Panel", "RNA Panels", "Senescence", "Pathways & Telomere"];
+    private int _step;
+    private BiomarkerInput _input = new();
+    private ScoringResult? _result;
+    private List<ValidationError> _errors = [];
+
+    private void Calculate()
+    {
+        _errors = InputValidator.Validate(_input);
+        if (_errors.Count > 0) return;
+        _result = CompositeScorer.Score(_input);
+    }
+
+    private void Reset()
+    {
+        _result = null;
+        _step = 0;
+    }
+
+    private void LoadHealthyExample()
+    {
+        _input = new BiomarkerInput
+        {
+            Demographics = new() { ChronologicalAge = 45, Sex = Sex.Female, SmokingPackYears = 0 },
+            Blood = new()
+            {
+                Albumin = 4.5, AlkalinePhosphatase = 60, Creatinine = 0.9,
+                CReactiveProtein = 0.3, FastingGlucose = 85, WhiteBloodCellCount = 5.5,
+                LymphocytePercent = 35, MeanCellVolume = 88, RedCellDistWidth = 12.5
+            },
+            PiRna = new() { Values = [30, 25, 35, 20, 28, 32] },
+            MiRna = new() { MiR34a = 0.8, MiR21 = 0.7, MiR155 = 0.9, MiR15b5p = 1.5, MiR3735p = 1.8 },
+            Senescence = new() { P16Ink4a = 0.8, Gdf15 = 400, Il6 = 1.0, TnfAlpha = 0.8, Serpine1 = 15, Fgf21 = 150 },
+            Pathway = new() { NadLevel = 45, NadNadhRatio = 3.5, Sirt1Expression = 1.8, Sirt6Expression = 1.6, AmpkActivity = 1.9 },
+            Telomere = new() { LeukocyteTelomereLength = 8.5, TertExpression = 1.5, TercLevel = 1.3 },
+        };
+    }
+
+    private void LoadUnhealthyExample()
+    {
+        _input = new BiomarkerInput
+        {
+            Demographics = new() { ChronologicalAge = 55, Sex = Sex.Male, SmokingPackYears = 20 },
+            Blood = new()
+            {
+                Albumin = 3.2, AlkalinePhosphatase = 130, Creatinine = 1.4,
+                CReactiveProtein = 4.5, FastingGlucose = 125, WhiteBloodCellCount = 9.5,
+                LymphocytePercent = 18, MeanCellVolume = 98, RedCellDistWidth = 16
+            },
+            MiRna = new() { MiR34a = 3.5, MiR21 = 4.0, MiR155 = 2.8 },
+            Senescence = new() { P16Ink4a = 3.5, Gdf15 = 2000, Il6 = 8.0, Serpine1 = 65 },
+            Pathway = new() { NadLevel = 12, Sirt1Expression = 0.4, AmpkActivity = 0.3 },
+            Telomere = new() { LeukocyteTelomereLength = 5.0 },
+        };
+    }
+}

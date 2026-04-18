@@ -1,0 +1,77 @@
+@page "/"
+
+<PageTitle>RNA Therapy Platform</PageTitle>
+
+<div class="home">
+    <div class="hero">
+        <h2>RNA Therapy Platform</h2>
+        <p>
+            Browse RNA therapies, assess biomarkers, synthesize mRNA, and control lab equipment
+            — all from your browser. 100% client-side, no data leaves your device.
+        </p>
+        <p class="help-block">
+            This platform runs entirely in your browser using WebAssembly. No server processes your data.
+            All scoring algorithms, therapy logic, and protocol steps execute locally.
+            The only network connections are WebSocket (wss://) links to ESP32 lab controllers for real-time equipment control.
+            Total hardware cost: ~$250 (4x ESP32 + sensors + motors). Total reagent cost: ~$1,600. Combined: ~$2,000 for a complete mRNA synthesis lab.
+        </p>
+        <div class="hero-features">
+            <div class="feature">
+                <strong>10 RNA Therapies</strong>
+                <span>Rejuvenation, cold, flu, COVID, cancer, wound healing, hair, muscle, allergy</span>
+                <div class="help">Each therapy has: mechanism of action, mRNA construct details (gene, length, Addgene/GenBank source), LNP lipid nanoparticle formulation, dosing protocol, delivery method with full administration instructions, clinical trial status, and real scoring logic that computes eligibility from your inputs.</div>
+            </div>
+            <div class="feature">
+                <strong>Biological Age Assessment</strong>
+                <span>6-pillar scoring: PhenoAge, piRNA, miRNA, senescence, pathways, telomere</span>
+                <div class="help">Levine PhenoAge algorithm (2018) uses exact published coefficients from NHANES III to compute biological age from 9 blood biomarkers (albumin, ALP, creatinine, CRP, glucose, WBC, lymphocyte%, MCV, RDW). Optional: Duke 2026 piRNA panel (6 piRNAs, 86% 2-year survival prediction), miRNA aging signatures (miR-34a, miR-21, miR-155), SASP senescence markers (p16, GDF15, IL-6, TNF-a), NAD+/SIRT/AMPK pathway health, and telomere length.</div>
+            </div>
+            <div class="feature">
+                <strong>mRNA Construct Library</strong>
+                <span>Gene sequences, sources (Addgene, GenBank), LNP formulations, dosing</span>
+                <div class="help">Each construct lists the gene name, nucleotide length, biological function, and where to buy the DNA template. Sources include Addgene (nonprofit plasmid repository, ~$75/plasmid) and GenBank accession numbers. LNP formulations specify exact lipid molar ratios for each delivery route (IM, IV, intranasal, topical, microneedle, SC).</div>
+            </div>
+            <div class="feature">
+                <strong>ESP32 Lab Control</strong>
+                <span>WSS-connected heat block, syringe pumps, UV spectro, centrifuge, gel</span>
+                <div class="help">4 ESP32-S3 microcontrollers ($4 each) connected via WebSocket. #1 Controller: PID heat block (37°C for IVT), UV spectrophotometer (A260/A280 for RNA purity), brushless centrifuge (8000 RPM purification), gel electrophoresis (100V, size verification). #2 Stepper: dedicated syringe pump timing for precise 3:1 LNP mixing. #3 Environment: pH meter, magnetic stirrer, vortex, UV-C sterilizer, fume hood, emergency stop, gas detector, freezer/fridge monitoring. #4 QC: gel camera imaging, DLS particle sizer (Stokes-Einstein, target 60-100nm), turbidity sensor.</div>
+            </div>
+            <div class="feature">
+                <strong>12-Step IVT Protocol</strong>
+                <span>Template prep through LNP encapsulation — guided step by step</span>
+                <div class="help">In Vitro Transcription protocol customized per therapy. Steps: (1) linearize plasmid template, (2) purify template DNA, (3) QC template concentration via UV spectro, (4) T7 IVT with CleanCap + m1-pseudouridine, (5) DNase treatment, (6) purify mRNA, (7) QC yield A260/A280, (8) gel electrophoresis size check, (9) LNP microfluidic encapsulation via syringe pumps, (10) buffer exchange/dialysis, (11) final QC, (12) storage at -80°C. Each step shows temperature, duration, equipment, and detailed notes.</div>
+            </div>
+            <div class="feature">
+                <strong>PASS / FAIL Verdict</strong>
+                <span>Rejuvenation eligibility: OSK, OSKM, SB000 protocol assessment</span>
+                <div class="help">For rejuvenation therapy: composite score from 6 pillars, each weighted and scored 0-100. PASS requires composite >= 60 AND no single pillar below 30 AND senescence burden not critical. Evaluates 3 protocols: OSK (Oct4/Sox2/Klf4 — safest, no c-Myc oncogene), OSKM (+ c-Myc — most potent, tumor risk), SB000 (novel single-factor, comparable potency, minimal identity disruption). For other therapies: eligibility computed from patient-specific inputs (timing, severity, lab results).</div>
+            </div>
+        </div>
+        <div style="margin-top:1rem;">
+            <a href="therapy/common-cold" class="btn-primary">Browse Therapies</a>
+            <div class="help">Opens the therapy catalog showing all 10 RNA therapies. Click any therapy to expand details: mechanism, constructs, formulation, dosing, references. Each has an "Assess & Dose" button to enter patient data and compute eligibility.</div>
+        </div>
+        <div style="margin-top:0.5rem;">
+            <a href="assess/biological-age" class="btn-secondary">Age Assessment</a>
+            <div class="help">Opens the 6-pillar biological age assessment. Enter 9 required blood biomarkers (standard lab panel) plus optional RNA/senescence/pathway/telomere panels. Computes PhenoAge biological age, composite score, and rejuvenation protocol eligibility. Includes sample data presets for healthy and unhealthy profiles.</div>
+        </div>
+        <div style="margin-top:0.5rem;">
+            <a href="lab/dashboard" class="btn-secondary">Lab Dashboard</a>
+            <div class="help">Opens the ESP32 #1 lab controller dashboard. Enter the WebSocket URL (wss://ESP32_IP:9123) to connect. Shows real-time equipment status with live updates every 500ms. Controls: heat block target temperature + PID, syringe pump flow rates + volumes, UV spectro measurement trigger, centrifuge RPM + duration, gel voltage + duration.</div>
+        </div>
+    </div>
+
+    <div class="science-summary">
+        <h3>Therapy Categories</h3>
+        <p class="section-help">Therapies are grouped by medical application. Each category contains therapies at different clinical stages — from Research (lab studies only) through Preclinical (animal testing), Clinical (human trials Phase 1-3), to Approved (FDA-authorized, e.g. COVID vaccines).</p>
+        <div class="hero-features">
+            @foreach (var group in TherapyCatalog.All.GroupBy(t => t.Category))
+            {
+                <div class="feature">
+                    <strong>@group.Key</strong>
+                    <span>@string.Join(", ", group.Select(t => t.Name))</span>
+                </div>
+            }
+        </div>
+    </div>
+</div>

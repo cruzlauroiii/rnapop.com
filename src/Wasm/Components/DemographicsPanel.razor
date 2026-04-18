@@ -1,0 +1,25 @@
+@code {
+    [Parameter] public Demographics Demographics { get; set; } = new();
+}
+
+<fieldset>
+    <legend>Demographics (Required)</legend>
+    <div class="form-grid">
+        <label>
+            Chronological Age
+            <input type="number" min="1" max="130" @bind="Demographics.ChronologicalAge" />
+        </label>
+        <label>
+            Biological Sex
+            <select @bind="Demographics.Sex">
+                <option value="@Sex.Male">Male</option>
+                <option value="@Sex.Female">Female</option>
+            </select>
+        </label>
+        <label>
+            Smoking Pack-Years
+            <input type="number" min="0" step="0.5" @bind="Demographics.SmokingPackYears" />
+            <small>packs/day x years smoked (0 if never)</small>
+        </label>
+    </div>
+</fieldset>
